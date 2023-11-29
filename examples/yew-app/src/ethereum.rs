@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
-use ethers::types::{Address, Signature};
+use ethers::{
+    providers::Provider,
+    types::{Address, Signature},
+};
+use ethers_web::{Ethereum, EthereumBuilder, EthereumError, Event, WalletType};
+use log::error;
 use serde::Serialize;
 use yew::{platform::spawn_local, prelude::*};
-use ethers_web::{Ethereum, EthereumBuilder, EthereumError, WalletType, Event};
-use log::error;
 
 #[derive(Clone, Debug)]
 pub struct UseEthereum {
@@ -30,23 +33,30 @@ impl UseEthereum {
             spawn_local(async move {
                 let mut eth = (*this.ethereum).clone();
                 let me = this.clone();
-                if eth.connect(wallet_type, 
-                               Some(
-                                   Arc::new(move |event| {
-                                       match event {
-                                            Event::Connected => me.connected.set(true),
-                                            Event::Disconnected => me.connected.set(false),
-                                            Event::ChainIdChanged(chain_id) => me.chain_id.set(chain_id),
-                                            Event::AccountsChanged(accounts) => me.accounts.set(accounts)
-                                       }
-                                   }
-                                   ))).await.is_ok() {
+                if eth
+                    .connect(
+                        wallet_type,
+                        Some(Arc::new(move |event| match event {
+                            Event::Connected => me.connected.set(true),
+                            Event::Disconnected => me.connected.set(false),
+                            Event::ChainIdChanged(chain_id) => me.chain_id.set(chain_id),
+                            Event::AccountsChanged(accounts) => me.accounts.set(accounts),
+                        })),
+                    )
+                    .await
+                    .is_ok()
+                {
                     this.ethereum.set(eth);
                 }
             });
         } else {
             error!("This wallet type is unavailable!");
         }
+    }
+
+    pub fn provider(&self) -> Provider<Ethereum> {
+        let eth = (*self.ethereum).clone();
+        Provider::<Ethereum>::new(eth)
     }
 
     pub fn disconnect(&mut self) {

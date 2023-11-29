@@ -3,32 +3,24 @@ use ethers::{
     contract::abigen,
     types::{H160, U256},
 };
-use ethers_web::ConnectedProvider;
 use log::{error, info};
 use yew::{platform::spawn_local, prelude::*};
 
 abigen!(TokenContract, "abi/ERC20.json");
 
 async fn transfer(ethereum: &UseEthereum, token_address: H160, to: H160, amount: U256) {
-    match ethereum.ethereum.get_provider().await {
-        ConnectedProvider::Injected(provider) => {
-            let erc20_contract = TokenContract::new(token_address, provider.into());
-            info!("Trying to execute transaction...");
-            if let Ok(tx) = erc20_contract
-                .transfer(to, amount)
-                .from(ethereum.account())
-                .send()
-                .await
-            {
-                info!("Transaction commited, awaiting blockchain verification");
-                match tx.await {
-                    Ok(_) => info!("Token transfered"),
-                    Err(err) => error!("Token transfer failed {err:?}"),
-                }
-            }
-        }
-        _ => {
-            error!("Don't support that yet");
+    let erc20_contract = TokenContract::new(token_address, ethereum.provider().into());
+    info!("Trying to execute transaction...");
+    if let Ok(tx) = erc20_contract
+        .transfer(to, amount)
+        .from(ethereum.account())
+        .send()
+        .await
+    {
+        info!("Transaction commited, awaiting blockchain verification");
+        match tx.await {
+            Ok(_) => info!("Token transfered"),
+            Err(err) => error!("Token transfer failed {err:?}"),
         }
     }
 }

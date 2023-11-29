@@ -1,11 +1,10 @@
 use async_trait::async_trait;
 use ethers::{
-    core::utils::serialize,
     providers::{JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError},
     utils::{
         hex::{decode, FromHexError},
-        ConversionError,
+        serialize, ConversionError,
     },
 };
 use gloo_utils::format::JsValueSerdeExt;
@@ -57,6 +56,9 @@ pub enum Eip1193Error {
     #[error("Cannot parse ethereum response")]
     JsParseError,
 
+    #[error("Not implemented yet")]
+    Unimplemented,
+
     #[error(transparent)]
     /// Thrown if the response could not be parsed
     JsonRpcError(#[from] JsonRpcError),
@@ -107,58 +109,15 @@ impl Ethereum {
     }
 }
 
-impl From<Eip1193Error> for ProviderError {
-    fn from(src: Eip1193Error) -> Self {
-        match src {
-            Eip1193Error::JsValueError(s) => ProviderError::CustomError(s),
-            _ => ProviderError::JsonRpcClientError(Box::new(src)),
-        }
-    }
-}
-
 impl From<JsValue> for Eip1193Error {
     fn from(src: JsValue) -> Self {
         Eip1193Error::JsValueError(format!("{:?}", src))
     }
 }
 
-impl RpcError for Eip1193Error {
-    fn as_serde_error(&self) -> Option<&serde_json::Error> {
-        match self {
-            Eip1193Error::SerdeJson(err) => Some(err),
-            _ => None,
-        }
-    }
-
-    fn is_serde_error(&self) -> bool {
-        match self {
-            Eip1193Error::JsParseError | Eip1193Error::SerdeJson(_) => true,
-            _ => false,
-        }
-    }
-
-    fn as_error_response(&self) -> Option<&JsonRpcError> {
-        match self {
-            Eip1193Error::JsonRpcError(err) => Some(err),
-            _ => None,
-        }
-    }
-
-    fn is_error_response(&self) -> bool {
-        match self {
-            Eip1193Error::JsValueError(_) => true,
-            _ => false,
-        }
-    }
-}
-
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-impl JsonRpcClient for Eip1193 {
-    type Error = Eip1193Error;
-
+impl Eip1193 {
     /// Sends the request via `window.ethereum` in Js
-    async fn request<T: Serialize + Send + Sync, R: DeserializeOwned>(
+    pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned>(
         &self,
         method: &str,
         params: T,
@@ -209,24 +168,6 @@ impl JsonRpcClient for Eip1193 {
             Err(e) => Err(e.into()),
         }
     }
-}
-
-impl Eip1193 {
-    pub fn is_available() -> bool {
-        Ethereum::default().is_ok()
-    }
-
-    pub fn new() -> Self {
-        Eip1193 {}
-    }
-
-    pub fn on(self, event: &str, callback: Box<dyn FnMut(JsValue)>) -> Result<(), Eip1193Error> {
-        let ethereum = Ethereum::default()?;
-        let closure = Closure::wrap(callback);
-        ethereum.on(event, &closure);
-        closure.forget();
-        Ok(())
-    }
 
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
         &self,
@@ -241,5 +182,21 @@ impl Eip1193 {
 
         let sig = decode(sig)?;
         Ok(Signature::try_from(sig.as_slice())?)
+    }
+
+    pub fn is_available() -> bool {
+        Ethereum::default().is_ok()
+    }
+
+    pub fn new() -> Self {
+        Eip1193 {}
+    }
+
+    pub fn on(self, event: &str, callback: Box<dyn FnMut(JsValue)>) -> Result<(), Eip1193Error> {
+        let ethereum = Ethereum::default()?;
+        let closure = Closure::wrap(callback);
+        ethereum.on(event, &closure);
+        closure.forget();
+        Ok(())
     }
 }

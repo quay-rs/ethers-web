@@ -1,19 +1,25 @@
-use std::{sync::Arc, fmt::{Debug, Formatter, Result as FmtResult}};
+pub mod eip1193;
+pub mod walletconnect;
+
+use async_trait::async_trait;
 use eip1193::{Eip1193, Eip1193Error};
 use ethers::{
-    middleware::SignerMiddleware,
-    providers::{Http, Middleware, Provider, ProviderError},
+    providers::{JsonRpcClient, JsonRpcError, Provider, ProviderError, RpcError},
     types::{Address, Signature, SignatureError, U256},
     utils::ConversionError,
 };
-use serde::Serialize;
 use gloo_utils::format::JsValueSerdeExt;
 use hex::FromHexError;
+use serde::{de::DeserializeOwned, Serialize};
+use std::{
+    fmt::{Debug, Formatter, Result as FmtResult},
+    sync::Arc,
+};
 use thiserror::Error;
+use unsafe_send_sync::UnsafeSendSync;
 use walletconnect_client::prelude::Metadata;
 
-pub mod eip1193;
-pub mod walletconnect;
+use walletconnect::WalletConnectProvider;
 
 pub struct EthereumBuilder {
     pub name: String,
@@ -84,36 +90,6 @@ pub enum WalletType {
     WalletConnect,
 }
 
-#[derive(Clone, Debug)]
-pub enum ConnectedProvider {
-    None,
-    Injected(Provider<Eip1193>),
-    WalletConnect(SignerMiddleware<Provider<Http>, walletconnect::Signer>),
-}
-
-impl PartialEq for ConnectedProvider {
-    fn ne(&self, other: &Self) -> bool {
-        match self {
-            ConnectedProvider::None => match other {
-                ConnectedProvider::None => false,
-                _ => true,
-            },
-            ConnectedProvider::Injected(_) => match other {
-                ConnectedProvider::Injected(_) => false,
-                _ => true,
-            },
-            ConnectedProvider::WalletConnect(_) => match other {
-                ConnectedProvider::WalletConnect(_) => false,
-                _ => true,
-            },
-        }
-    }
-
-    fn eq(&self, other: &Self) -> bool {
-        !self.ne(other)
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum EthereumError {
     #[error("Wallet unavaibale")]
@@ -139,6 +115,51 @@ pub enum EthereumError {
 
     #[error(transparent)]
     Eip1193Error(#[from] Eip1193Error),
+
+    #[error(transparent)]
+    WalletConnectError(#[from] walletconnect_client::Error),
+}
+
+impl From<EthereumError> for ProviderError {
+    fn from(src: EthereumError) -> Self {
+        ProviderError::JsonRpcClientError(Box::new(src))
+    }
+}
+
+impl RpcError for EthereumError {
+    fn as_serde_error(&self) -> Option<&serde_json::Error> {
+        None
+    }
+
+    fn is_serde_error(&self) -> bool {
+        false
+    }
+
+    fn as_error_response(&self) -> Option<&JsonRpcError> {
+        None
+    }
+
+    fn is_error_response(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Clone)]
+pub enum WebProvider {
+    None,
+    Injected(Eip1193),
+    WalletConnect(WalletConnectProvider),
+}
+
+impl PartialEq for WebProvider {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::None, Self::None)
+            | (Self::Injected(_), Self::Injected(_))
+            | (Self::WalletConnect(_), Self::WalletConnect(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -149,17 +170,17 @@ pub struct Ethereum {
 
     accounts: Option<Vec<Address>>,
     chain_id: Option<u64>,
-    wallet: ConnectedProvider,
+    wallet: WebProvider,
 
-    listener: Option<Arc<dyn Fn(Event)>>,
+    listener: Option<UnsafeSendSync<Arc<dyn Fn(Event)>>>,
 }
 
 impl Debug for Ethereum {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
-            "Ethereum with accounts: {:?}, chain_id: {:?} and wallet: {:?}",
-            self.accounts, self.chain_id, self.wallet
+            "Ethereum with accounts: {:?}, chain_id: {:?} ",
+            self.accounts, self.chain_id
         )
     }
 }
@@ -187,15 +208,15 @@ impl Ethereum {
             rpc_node,
             accounts: None,
             chain_id: None,
-            wallet: ConnectedProvider::None,
-            listener: None
+            wallet: WebProvider::None,
+            listener: None,
         }
     }
 
     pub fn is_available(&self, wallet_type: WalletType) -> bool {
         match wallet_type {
             WalletType::Injected => self.injected_available(),
-            WalletType::WalletConnect => self.walletconnect_available()
+            WalletType::WalletConnect => self.walletconnect_available(),
         }
     }
 
@@ -221,12 +242,18 @@ impl Ethereum {
         self.wc_project_id.is_some()
     }
 
-    pub async fn connect(&mut self, wallet: WalletType, listener: Option<Arc<dyn Fn(Event)>>
-) -> Result<(), EthereumError> {
-        if self.wallet != ConnectedProvider::None {
+    pub async fn connect(
+        &mut self,
+        wallet: WalletType,
+        listener: Option<Arc<dyn Fn(Event)>>,
+    ) -> Result<(), EthereumError> {
+        if self.wallet != WebProvider::None {
             return Err(EthereumError::AlreadyConnected);
         }
-        self.listener = listener;
+        self.listener = match listener {
+            Some(listener) => Some(UnsafeSendSync::new(listener)),
+            None => None,
+        };
         match wallet {
             WalletType::Injected => self.connect_injected().await,
             WalletType::WalletConnect => self.connect_wc().await,
@@ -234,7 +261,7 @@ impl Ethereum {
     }
 
     pub fn disconnect(&mut self) {
-        self.wallet = ConnectedProvider::None;
+        self.wallet = WebProvider::None;
         self.accounts = None;
         self.chain_id = None;
 
@@ -247,15 +274,15 @@ impl Ethereum {
             return Err(EthereumError::Unavailable);
         }
 
-        let provider = Provider::<Eip1193>::new(Eip1193::new());
-        self.wallet = ConnectedProvider::Injected(provider.clone());
+        let injected = Eip1193::new();
+        self.wallet = WebProvider::Injected(injected.clone());
 
         self.accounts = Some(self.request_accounts().await?);
-        self.chain_id = Some(self.request_chain_id().await?);
+        self.chain_id = Some(self.request_chain_id().await?.low_u64());
 
         {
             let mut this = self.clone();
-            _ = provider.as_ref().clone().on(
+            _ = injected.clone().on(
                 "disconnected",
                 Box::new(move |_| {
                     this.disconnect();
@@ -265,7 +292,7 @@ impl Ethereum {
         }
         {
             let mut this = self.clone();
-            _ = provider.as_ref().clone().on(
+            _ = injected.clone().on(
                 "chainChanged",
                 Box::new(move |chain_id| {
                     this.chain_id = chain_id.into_serde::<U256>().ok().map(|c| c.low_u64());
@@ -275,7 +302,7 @@ impl Ethereum {
         }
         {
             let mut this = self.clone();
-            _ = provider.as_ref().clone().on(
+            _ = injected.clone().on(
                 "accountsChanged",
                 Box::new(move |accounts| {
                     this.accounts = accounts.into_serde::<Vec<Address>>().ok();
@@ -294,21 +321,17 @@ impl Ethereum {
         Ok(())
     }
 
-    pub async fn get_provider(&self) -> ConnectedProvider {
-        self.wallet.clone()
-    }
-
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
         &self,
         data: T,
         from: &Address,
     ) -> Result<Signature, EthereumError> {
         match &self.wallet {
-            ConnectedProvider::Injected(provider) => {
-                Ok((*provider.as_ref()).sign_typed_data(data, from).await?)
+            WebProvider::None => Err(EthereumError::NotConnected),
+            WebProvider::Injected(provider) => Ok(provider.sign_typed_data(data, from).await?),
+            WebProvider::WalletConnect(provider) => {
+                Ok(provider.sign_typed_data(data, from).await?)
             }
-            ConnectedProvider::WalletConnect(_) => Err(EthereumError::Unavailable),
-            ConnectedProvider::None => Err(EthereumError::NotConnected),
         }
     }
 
@@ -321,19 +344,15 @@ impl Ethereum {
 
     async fn request_accounts(&self) -> Result<Vec<Address>, EthereumError> {
         match &self.wallet {
-            ConnectedProvider::Injected(provider) => {
-                Ok(provider.request("eth_requestAccounts", ()).await?)
-            }
-            ConnectedProvider::WalletConnect(_) => Err(EthereumError::Unavailable),
-            ConnectedProvider::None => Err(EthereumError::NotConnected),
+            WebProvider::None => Err(EthereumError::NotConnected),
+            _ => Ok(self.request("eth_requestAccounts", ()).await?),
         }
     }
 
-    async fn request_chain_id(&self) -> Result<u64, EthereumError> {
+    async fn request_chain_id(&self) -> Result<U256, EthereumError> {
         match &self.wallet {
-            ConnectedProvider::Injected(provider) => Ok(provider.get_chainid().await?.low_u64()),
-            ConnectedProvider::WalletConnect(_) => Err(EthereumError::Unavailable),
-            ConnectedProvider::None => Err(EthereumError::NotConnected),
+            WebProvider::None => Err(EthereumError::NotConnected),
+            _ => Ok(self.request("eth_chainId", ()).await?),
         }
     }
 
@@ -343,6 +362,24 @@ impl Ethereum {
         }
         if let Some(listener) = &self.listener {
             listener(event);
+        }
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+impl JsonRpcClient for Ethereum {
+    type Error = EthereumError;
+
+    async fn request<T: Serialize + Send + Sync, R: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: T,
+    ) -> Result<R, Self::Error> {
+        match &self.wallet {
+            WebProvider::None => Err(EthereumError::NotConnected),
+            WebProvider::Injected(provider) => Ok(provider.request(method, params).await?),
+            WebProvider::WalletConnect(provider) => Ok(provider.request(method, params).await?),
         }
     }
 }
