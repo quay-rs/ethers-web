@@ -13,8 +13,9 @@ use yew::{platform::spawn_local, prelude::*};
 pub struct UseEthereum {
     pub ethereum: UseStateHandle<Ethereum>,
     pub connected: UseStateHandle<bool>,
-    accounts: UseStateHandle<Option<Vec<Address>>>,
+    pub accounts: UseStateHandle<Option<Vec<Address>>>,
     pub chain_id: UseStateHandle<Option<u64>>,
+    pub pairing_url: UseStateHandle<Option<String>>,
 }
 
 impl PartialEq for UseEthereum {
@@ -22,6 +23,7 @@ impl PartialEq for UseEthereum {
         self.connected == other.connected
             && self.accounts == other.accounts
             && self.chain_id == other.chain_id
+            && self.pairing_url == other.pairing_url
     }
 }
 
@@ -37,7 +39,11 @@ impl UseEthereum {
                     .connect(
                         wallet_type,
                         Some(Arc::new(move |event| match event {
-                            Event::Connected => me.connected.set(true),
+                            Event::ConnectionWaiting(url) => me.pairing_url.set(Some(url)),
+                            Event::Connected => {
+                                me.connected.set(true);
+                                me.pairing_url.set(None)
+                            }
                             Event::Disconnected => me.connected.set(false),
                             Event::ChainIdChanged(chain_id) => me.chain_id.set(chain_id),
                             Event::AccountsChanged(accounts) => me.accounts.set(accounts),
@@ -68,6 +74,14 @@ impl UseEthereum {
 
     pub fn is_connected(&self) -> bool {
         *self.connected
+    }
+
+    pub fn injected_available(&self) -> bool {
+        (*self.ethereum).injected_available()
+    }
+
+    pub fn walletconnect_available(&self) -> bool {
+        (*self.ethereum).walletconnect_available()
     }
 
     pub fn chain_id(&self) -> u64 {
@@ -101,15 +115,23 @@ impl UseEthereum {
 
 #[hook]
 pub fn use_ethereum() -> UseEthereum {
+    let mut builder = EthereumBuilder::new();
+
+    if let Some(project_id) = std::option_env!("PROJECT_ID") {
+        builder.walletconnect_id(project_id);
+    }
+
     let connected = use_state(move || false);
     let accounts = use_state(move || None as Option<Vec<Address>>);
     let chain_id = use_state(move || None as Option<u64>);
-    let ethereum = use_state(move || EthereumBuilder::new().build());
+    let ethereum = use_state(move || builder.build());
+    let pairing_url = use_state(move || None as Option<String>);
 
     UseEthereum {
         ethereum,
         connected,
         accounts,
         chain_id,
+        pairing_url,
     }
 }

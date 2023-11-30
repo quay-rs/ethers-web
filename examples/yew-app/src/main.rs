@@ -1,14 +1,13 @@
 use console_log;
-use yew_app::{
-    provider::EthereumContextProvider, 
-    views::{
-        button_connect::WalletButton,
-        button_sign::SignatureButton,
-        button_erc20::TransferButton,
-    }
-};
 use log::Level;
 use yew::prelude::*;
+use yew_app::{
+    provider::EthereumContextProvider,
+    views::{
+        button_connect::WalletButton, button_erc20::TransferButton, button_sign::SignatureButton,
+        code_view::CodeView,
+    },
+};
 
 #[function_component]
 fn App() -> Html {
@@ -17,6 +16,7 @@ fn App() -> Html {
             <WalletButton />
             <SignatureButton />
             <TransferButton />
+            <CodeView />
         </EthereumContextProvider>
     }
 }
