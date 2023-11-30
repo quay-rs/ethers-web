@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::ethereum::UseEthereum;
 use ethers::types::transaction::eip712::{EIP712Domain, Eip712DomainType, TypedData};
-use log::info;
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use yew::{platform::spawn_local, prelude::*};
@@ -98,8 +98,12 @@ pub fn signature_button() -> Html {
                         .await;
                     // Checking signature
                     let address = ethereum.account();
-                    let recover_address = signature_res.unwrap().recover_typed_data(&data).unwrap();
-                    info!("Signing with {:?} recovered {:?}", address, recover_address);
+                    if let Ok(signature_res) = signature_res {
+                        let recover_address = signature_res.recover_typed_data(&data).unwrap();
+                        info!("Signing with {:?} recovered {:?}", address, recover_address);
+                    } else {
+                        error!("Signature failed");
+                    }
                 });
             } else {
                 info!("Are we disconnected?");

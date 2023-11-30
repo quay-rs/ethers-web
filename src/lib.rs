@@ -4,7 +4,7 @@ pub mod walletconnect;
 use async_trait::async_trait;
 use eip1193::{Eip1193, Eip1193Error};
 use ethers::{
-    providers::{JsonRpcClient, JsonRpcError, Provider, ProviderError, RpcError},
+    providers::{JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError, U256},
     utils::ConversionError,
 };
@@ -17,29 +17,40 @@ use std::{
 };
 use thiserror::Error;
 use unsafe_send_sync::UnsafeSendSync;
-use walletconnect_client::prelude::Metadata;
+use walletconnect_client::{
+    prelude::{Event as WCEvent, Metadata},
+    WalletConnect,
+};
 
+use log::debug;
 use walletconnect::WalletConnectProvider;
 
 pub struct EthereumBuilder {
+    pub chain_id: u64,
     pub name: String,
     pub description: String,
     pub url: String,
     pub wc_project_id: Option<String>,
     pub icons: Vec<String>,
-    pub rpc_node: String,
+    pub rpc_node: Option<String>,
 }
 
 impl EthereumBuilder {
     pub fn new() -> Self {
         Self {
+            chain_id: 1,
             name: "Example dApp".to_string(),
             description: "An example dApp written in Rust".to_string(),
             url: "https://github.com/quay-rs/ethers-web".to_string(),
             wc_project_id: None,
             icons: Vec::new(),
-            rpc_node: "".to_string(),
+            rpc_node: None,
         }
+    }
+
+    pub fn chain_id(&mut self, chain_id: u64) -> &Self {
+        self.chain_id = chain_id;
+        self
     }
 
     pub fn name(&mut self, name: &str) -> &Self {
@@ -63,7 +74,7 @@ impl EthereumBuilder {
     }
 
     pub fn rpc_node(&mut self, rpc_node: &str) -> &Self {
-        self.rpc_node = rpc_node.to_string();
+        self.rpc_node = Some(rpc_node.to_string());
         self
     }
 
@@ -74,6 +85,7 @@ impl EthereumBuilder {
 
     pub fn build(&self) -> Ethereum {
         Ethereum::new(
+            self.chain_id,
             self.name.clone(),
             self.description.clone(),
             self.url.clone(),
@@ -117,7 +129,10 @@ pub enum EthereumError {
     Eip1193Error(#[from] Eip1193Error),
 
     #[error(transparent)]
-    WalletConnectError(#[from] walletconnect_client::Error),
+    WalletConnectError(#[from] walletconnect::Error),
+
+    #[error(transparent)]
+    WalletConnectClientError(#[from] walletconnect_client::Error),
 }
 
 impl From<EthereumError> for ProviderError {
@@ -166,7 +181,7 @@ impl PartialEq for WebProvider {
 pub struct Ethereum {
     pub metadata: Metadata,
     pub wc_project_id: Option<String>,
-    pub rpc_node: String,
+    pub rpc_node: Option<String>,
 
     accounts: Option<Vec<Address>>,
     chain_id: Option<u64>,
@@ -187,6 +202,7 @@ impl Debug for Ethereum {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
+    ConnectionWaiting(String),
     Connected,
     Disconnected,
     ChainIdChanged(Option<u64>),
@@ -195,19 +211,20 @@ pub enum Event {
 
 impl Ethereum {
     fn new(
+        chain_id: u64,
         name: String,
         description: String,
         url: String,
         wc_project_id: Option<String>,
         icons: Vec<String>,
-        rpc_node: String,
+        rpc_node: Option<String>,
     ) -> Self {
         Ethereum {
             metadata: Metadata::from(&name, &description, &url, icons),
             wc_project_id,
             rpc_node,
             accounts: None,
-            chain_id: None,
+            chain_id: Some(chain_id),
             wallet: WebProvider::None,
             listener: None,
         }
@@ -261,6 +278,9 @@ impl Ethereum {
     }
 
     pub fn disconnect(&mut self) {
+        if let WebProvider::WalletConnect(wc) = &self.wallet {
+            wc.disconnect();
+        }
         self.wallet = WebProvider::None;
         self.accounts = None;
         self.chain_id = None;
@@ -339,27 +359,57 @@ impl Ethereum {
         if !self.walletconnect_available() {
             return Err(EthereumError::Unavailable);
         }
+
+        let this = self.clone();
+        let mut wc = WalletConnect::connect(
+            self.wc_project_id.clone().unwrap().into(),
+            self.chain_id.unwrap_or_else(|| 1),
+            self.metadata.clone(),
+            Some(Box::new(move |event| {
+                debug!("Event happened {event:?}");
+                match event {
+                    WCEvent::Connected => this.emit_event(Event::Connected),
+                    WCEvent::Disconnected => this.emit_event(Event::Disconnected),
+                    WCEvent::ChainChanged(chain_id) => {
+                        this.emit_event(Event::ChainIdChanged(Some(chain_id)))
+                    }
+                    WCEvent::AccountsChanged(accounts) => {
+                        this.emit_event(Event::AccountsChanged(Some(accounts)))
+                    }
+                }
+            })),
+        )?;
+
+        let url = wc.initiate_session().await?;
+
+        self.wallet =
+            WebProvider::WalletConnect(WalletConnectProvider::new(wc, self.rpc_node.clone()));
+
+        self.emit_event(Event::ConnectionWaiting(url));
+
         Ok(())
     }
 
     async fn request_accounts(&self) -> Result<Vec<Address>, EthereumError> {
         match &self.wallet {
             WebProvider::None => Err(EthereumError::NotConnected),
-            _ => Ok(self.request("eth_requestAccounts", ()).await?),
+            WebProvider::Injected(_) => Ok(self.request("eth_requestAccounts", ()).await?),
+            WebProvider::WalletConnect(wc) => match wc.accounts() {
+                Some(a) => Ok(a),
+                None => Err(EthereumError::Unavailable),
+            },
         }
     }
 
     async fn request_chain_id(&self) -> Result<U256, EthereumError> {
         match &self.wallet {
             WebProvider::None => Err(EthereumError::NotConnected),
-            _ => Ok(self.request("eth_chainId", ()).await?),
+            WebProvider::Injected(_) => Ok(self.request("eth_chainId", ()).await?),
+            WebProvider::WalletConnect(wc) => Ok(wc.chain_id().into()),
         }
     }
 
-    fn emit_event(&mut self, event: Event) {
-        if event == Event::Disconnected {
-            self.disconnect();
-        }
+    fn emit_event(&self, event: Event) {
         if let Some(listener) = &self.listener {
             listener(event);
         }
@@ -371,7 +421,7 @@ impl Ethereum {
 impl JsonRpcClient for Ethereum {
     type Error = EthereumError;
 
-    async fn request<T: Serialize + Send + Sync, R: DeserializeOwned>(
+    async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
         &self,
         method: &str,
         params: T,

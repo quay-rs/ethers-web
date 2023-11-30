@@ -1,6 +1,5 @@
-use async_trait::async_trait;
 use ethers::{
-    providers::{JsonRpcClient, JsonRpcError, ProviderError, RpcError},
+    providers::JsonRpcError,
     types::{Address, Signature, SignatureError},
     utils::{
         hex::{decode, FromHexError},
@@ -117,7 +116,7 @@ impl From<JsValue> for Eip1193Error {
 
 impl Eip1193 {
     /// Sends the request via `window.ethereum` in Js
-    pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned>(
+    pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
         &self,
         method: &str,
         params: T,

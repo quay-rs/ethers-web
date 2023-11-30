@@ -1,16 +1,47 @@
-use ethers::types::{Address, Signature};
+use ethers::{
+    providers::{Http, HttpClientError, JsonRpcClient},
+    types::{Address, Signature, SignatureError},
+    utils::{hex::decode, serialize},
+};
+use hex::FromHexError;
 use log::debug;
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::{from_value, json};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
+    str::FromStr,
     sync::Arc,
 };
+use thiserror::Error;
 use unsafe_send_sync::UnsafeSendSync;
 use walletconnect_client::prelude::*;
+use wasm_bindgen::__rt::WasmRefCell;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Missing RPC provider")]
+    MissingProvider,
+
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    WalletConnectError(#[from] WalletConnectError),
+
+    #[error(transparent)]
+    HttpClientError(#[from] HttpClientError),
+
+    #[error(transparent)]
+    SignatureError(#[from] SignatureError),
+
+    #[error(transparent)]
+    HexError(#[from] FromHexError),
+}
 
 #[derive(Clone)]
 pub struct WalletConnectProvider {
-    client: UnsafeSendSync<Arc<WalletConnect>>,
+    client: UnsafeSendSync<Arc<WasmRefCell<WalletConnect>>>,
+    provider: Option<UnsafeSendSync<Http>>,
 }
 
 impl Debug for WalletConnectProvider {
@@ -25,33 +56,81 @@ impl Debug for WalletConnectProvider {
 }
 
 impl WalletConnectProvider {
-    /// Sends the request via `window.ethereum` in Js
-    pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned>(
-        &self,
-        method: &str,
-        _params: T,
-    ) -> Result<R, WalletConnectError> {
-        debug!("Method incoming! {method}");
-        Err(WalletConnectError::Unknown)
+    pub fn new(client: WalletConnect, rpc_url: Option<String>) -> Self {
+        let provider = match rpc_url {
+            Some(url) => {
+                if let Ok(p) = Http::from_str(&url) {
+                    Some(UnsafeSendSync::new(p))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        Self {
+            client: UnsafeSendSync::new(Arc::new(WasmRefCell::new(client))),
+            provider,
+        }
     }
 
+    pub async fn disconnect(&self) {
+        self.client.borrow_mut().disconnect();
+    }
+
+    pub fn chain_id(&self) -> u64 {
+        self.client.borrow_mut().chain_id()
+    }
+
+    pub fn address(&self) -> ethers::types::Address {
+        self.client.borrow_mut().address()
+    }
+
+    pub fn accounts(&self) -> Option<Vec<ethers::types::Address>> {
+        let chain_id = self.client.borrow().chain_id();
+        self.client.borrow_mut().get_accounts_for_chain_id(chain_id)
+    }
+
+    /// Sends request via WalletConnectClient
+    pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
+        &self,
+        method: &str,
+        params: T,
+    ) -> Result<R, Error> {
+        let params = json!(params);
+
+        let mut wc_client = self.client.borrow_mut();
+        let chain_id = wc_client.chain_id();
+
+        if wc_client.supports_method(method) {
+            let res = wc_client.request(method, Some(params), chain_id).await;
+            match res {
+                Ok(_) => debug!("Went through!"),
+                Err(ref err) => debug!("Result received {err:?}"),
+            }
+
+            Ok(from_value(res?)?)
+        } else {
+            if let Some(provider) = &self.provider {
+                Ok((*provider).request(method, params).await?)
+            } else {
+                Err(Error::MissingProvider)
+            }
+        }
+    }
+
+    /// Builds typed data Json structure to send it to WalletConnect and sends via client's channel
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
         &self,
-        _data: T,
-        _from: &Address,
-    ) -> Result<Signature, WalletConnectError> {
-        // let provider = self.provider.deref();
-        // let provider: Provider<Eip1193> = provider.borrow_mut().clone();
-        // let data = serialize(&data);
-        // let from = serialize(from);
-        //
-        // let sig: String = provider
-        //     .request("eth_signTypedData_v4", [from, data])
-        //     .await?;
-        // let sig = sig.strip_prefix("0x").unwrap_or(&sig);
-        //
-        // let sig = decode(sig)?;
-        // Ok(Signature::try_from(sig.as_slice())?)
-        Err(WalletConnectError::Unknown)
+        data: T,
+        from: &Address,
+    ) -> Result<Signature, Error> {
+        let data = serialize(&data);
+        let from = serialize(from);
+
+        let sig: String = self.request("eth_signTypedData_v4", [from, data]).await?;
+        let sig = sig.strip_prefix("0x").unwrap_or(&sig);
+
+        let sig = decode(sig)?;
+        Ok(Signature::try_from(sig.as_slice())?)
     }
 }

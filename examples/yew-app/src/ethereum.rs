@@ -120,7 +120,9 @@ pub fn use_ethereum() -> UseEthereum {
     if let Some(project_id) = std::option_env!("PROJECT_ID") {
         builder.walletconnect_id(project_id);
     }
-
+    if let Some(rpc_url) = std::option_env!("RPC_URL") {
+        builder.rpc_node(rpc_url);
+    }
     let connected = use_state(move || false);
     let accounts = use_state(move || None as Option<Vec<Address>>);
     let chain_id = use_state(move || None as Option<u64>);
