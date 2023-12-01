@@ -17,7 +17,9 @@ In progress of creation.
 ## Features
 
 - [X] EIP1193 injected wallet implementation
-- [ ] WalletConnect (in progress)
+- [X] WalletConnect
+- [ ] Documentation
+- [ ] Better examples (plus leptos example)
 
 ## Note on WASM
 
