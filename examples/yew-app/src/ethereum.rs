@@ -5,7 +5,7 @@ use ethers::{
     types::{Address, Signature},
 };
 use ethers_web::{Ethereum, EthereumBuilder, EthereumError, Event, WalletType};
-use log::error;
+use log::{debug, error};
 use serde::Serialize;
 use yew::{platform::spawn_local, prelude::*};
 
@@ -39,7 +39,10 @@ impl UseEthereum {
                     .connect(
                         wallet_type,
                         Some(Arc::new(move |event| match event {
-                            Event::ConnectionWaiting(url) => me.pairing_url.set(Some(url)),
+                            Event::ConnectionWaiting(url) => {
+                                debug!("{url}");
+                                me.pairing_url.set(Some(url));
+                            }
                             Event::Connected => {
                                 me.connected.set(true);
                                 me.pairing_url.set(None)
@@ -126,7 +129,7 @@ pub fn use_ethereum() -> UseEthereum {
     let connected = use_state(move || false);
     let accounts = use_state(move || None as Option<Vec<Address>>);
     let chain_id = use_state(move || None as Option<u64>);
-    let ethereum = use_state(move || builder.build());
+    let ethereum = use_state(move || builder.url("http://localhost").build());
     let pairing_url = use_state(move || None as Option<String>);
 
     UseEthereum {
