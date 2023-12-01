@@ -365,17 +365,14 @@ impl Ethereum {
             self.wc_project_id.clone().unwrap().into(),
             self.chain_id.unwrap_or_else(|| 1),
             self.metadata.clone(),
-            Some(Box::new(move |event| {
-                debug!("Event happened {event:?}");
-                match event {
-                    WCEvent::Connected => this.emit_event(Event::Connected),
-                    WCEvent::Disconnected => this.emit_event(Event::Disconnected),
-                    WCEvent::ChainChanged(chain_id) => {
-                        this.emit_event(Event::ChainIdChanged(Some(chain_id)))
-                    }
-                    WCEvent::AccountsChanged(accounts) => {
-                        this.emit_event(Event::AccountsChanged(Some(accounts)))
-                    }
+            Some(Box::new(move |event| match event {
+                WCEvent::Connected => this.emit_event(Event::Connected),
+                WCEvent::Disconnected => this.emit_event(Event::Disconnected),
+                WCEvent::ChainChanged(chain_id) => {
+                    this.emit_event(Event::ChainIdChanged(Some(chain_id)))
+                }
+                WCEvent::AccountsChanged(accounts) => {
+                    this.emit_event(Event::AccountsChanged(Some(accounts)))
                 }
             })),
         )?;

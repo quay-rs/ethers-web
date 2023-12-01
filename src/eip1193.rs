@@ -12,15 +12,15 @@ use thiserror::Error;
 use wasm_bindgen::{closure::Closure, prelude::*, JsValue};
 
 #[wasm_bindgen]
-pub struct Request {
+pub struct Eip1193Request {
     method: String,
     params: JsValue,
 }
 
 #[wasm_bindgen]
-impl Request {
-    pub fn new(method: String, params: JsValue) -> Request {
-        Request { method, params }
+impl Eip1193Request {
+    pub fn new(method: String, params: JsValue) -> Eip1193Request {
+        Eip1193Request { method, params }
     }
 
     #[wasm_bindgen(getter)]
@@ -89,7 +89,7 @@ extern "C" {
     pub type Ethereum;
 
     #[wasm_bindgen(catch, method)]
-    async fn request(_: &Ethereum, args: Request) -> Result<JsValue, JsValue>;
+    async fn request(_: &Ethereum, args: Eip1193Request) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(method)]
     fn on(_: &Ethereum, eventName: &str, listener: &Closure<dyn FnMut(JsValue)>);
@@ -160,7 +160,7 @@ impl Eip1193 {
             js_sys::Array::new()
         };
 
-        let payload = Request::new(method.to_string(), parsed_params.into());
+        let payload = Eip1193Request::new(method.to_string(), parsed_params.into());
 
         match ethereum.request(payload).await {
             Ok(r) => Ok(r.into_serde().unwrap()),

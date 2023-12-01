@@ -4,10 +4,11 @@ use ethers::{
     utils::{hex::decode, serialize},
 };
 use hex::FromHexError;
-use log::debug;
+use log::error;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_value, json};
 use std::{
+    cell::RefCell,
     fmt::{Debug, Formatter, Result as FmtResult},
     str::FromStr,
     sync::Arc,
@@ -15,7 +16,6 @@ use std::{
 use thiserror::Error;
 use unsafe_send_sync::UnsafeSendSync;
 use walletconnect_client::prelude::*;
-use wasm_bindgen::__rt::WasmRefCell;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -40,8 +40,8 @@ pub enum Error {
 
 #[derive(Clone)]
 pub struct WalletConnectProvider {
-    client: UnsafeSendSync<Arc<WasmRefCell<WalletConnect>>>,
-    provider: Option<UnsafeSendSync<Http>>,
+    client: UnsafeSendSync<Arc<RefCell<WalletConnect>>>,
+    provider: Option<UnsafeSendSync<RefCell<Http>>>,
 }
 
 impl Debug for WalletConnectProvider {
@@ -60,7 +60,7 @@ impl WalletConnectProvider {
         let provider = match rpc_url {
             Some(url) => {
                 if let Ok(p) = Http::from_str(&url) {
-                    Some(UnsafeSendSync::new(p))
+                    Some(UnsafeSendSync::new(RefCell::new(p)))
                 } else {
                     None
                 }
@@ -68,7 +68,7 @@ impl WalletConnectProvider {
             _ => None,
         };
         Self {
-            client: UnsafeSendSync::new(Arc::new(WasmRefCell::new(client))),
+            client: UnsafeSendSync::new(Arc::new(RefCell::new(client))),
             provider,
         }
     }
@@ -102,16 +102,12 @@ impl WalletConnectProvider {
         let chain_id = wc_client.chain_id();
 
         if wc_client.supports_method(method) {
-            let res = wc_client.request(method, Some(params), chain_id).await;
-            match res {
-                Ok(_) => debug!("Went through!"),
-                Err(ref err) => debug!("Result received {err:?}"),
-            }
-
-            Ok(from_value(res?)?)
+            Ok(from_value(
+                wc_client.request(method, Some(params), chain_id).await?,
+            )?)
         } else {
             if let Some(provider) = &self.provider {
-                Ok((*provider).request(method, params).await?)
+                Ok((*provider.borrow_mut()).request(method, params).await?)
             } else {
                 Err(Error::MissingProvider)
             }
