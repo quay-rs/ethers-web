@@ -110,7 +110,11 @@ impl Ethereum {
 
 impl From<JsValue> for Eip1193Error {
     fn from(src: JsValue) -> Self {
-        Eip1193Error::JsValueError(format!("{:?}", src))
+        if let Ok(message) = src.into_serde::<JsonRpcError>() {
+            Eip1193Error::JsonRpcError(message)
+        } else {
+            Eip1193Error::JsValueError(format!("{:?}", src))
+        }
     }
 }
 
@@ -163,7 +167,10 @@ impl Eip1193 {
         let payload = Eip1193Request::new(method.to_string(), parsed_params.into());
 
         match ethereum.request(payload).await {
-            Ok(r) => Ok(r.into_serde().unwrap()),
+            Ok(r) => match r.into_serde() {
+                Ok(r) => Ok(r),
+                Err(err) => Err(err.into()),
+            },
             Err(e) => Err(e.into()),
         }
     }

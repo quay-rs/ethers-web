@@ -22,7 +22,6 @@ use walletconnect_client::{
     WalletConnect,
 };
 
-use log::debug;
 use walletconnect::WalletConnectProvider;
 
 pub struct EthereumBuilder {
@@ -151,11 +150,23 @@ impl RpcError for EthereumError {
     }
 
     fn as_error_response(&self) -> Option<&JsonRpcError> {
-        None
+        match self {
+            EthereumError::Eip1193Error(e) => match e {
+                Eip1193Error::JsonRpcError(e) => Some(e),
+                _ => None
+            }
+            _ => None
+        }
     }
 
     fn is_error_response(&self) -> bool {
-        false
+        match self {
+            EthereumError::Eip1193Error(e) => match e {
+                Eip1193Error::JsonRpcError(_) => true,
+                _ => false
+            }
+            _ => false
+        }
     }
 }
 
