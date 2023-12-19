@@ -153,9 +153,9 @@ impl RpcError for EthereumError {
         match self {
             EthereumError::Eip1193Error(e) => match e {
                 Eip1193Error::JsonRpcError(e) => Some(e),
-                _ => None
-            }
-            _ => None
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -163,9 +163,9 @@ impl RpcError for EthereumError {
         match self {
             EthereumError::Eip1193Error(e) => match e {
                 Eip1193Error::JsonRpcError(_) => true,
-                _ => false
-            }
-            _ => false
+                _ => false,
+            },
+            _ => false,
         }
     }
 }
@@ -338,6 +338,13 @@ impl Ethereum {
                 Box::new(move |accounts| {
                     this.accounts = accounts.into_serde::<Vec<Address>>().ok();
                     this.emit_event(Event::AccountsChanged(this.accounts.clone()));
+                    if let Some(acc) = &this.accounts {
+                        this.emit_event(if acc.is_empty() {
+                            Event::Disconnected
+                        } else {
+                            Event::Connected
+                        });
+                    }
                 }),
             );
         }
@@ -347,6 +354,7 @@ impl Ethereum {
         }
         if self.accounts.is_some() {
             self.emit_event(Event::AccountsChanged(self.accounts.clone()));
+            self.emit_event(Event::Connected);
         }
 
         Ok(())
