@@ -1,4 +1,5 @@
 pub mod eip1193;
+pub mod explorer;
 pub mod walletconnect;
 
 use async_trait::async_trait;
@@ -132,6 +133,9 @@ pub enum EthereumError {
 
     #[error(transparent)]
     WalletConnectClientError(#[from] walletconnect_client::Error),
+
+    #[error(transparent)]
+    ReqwestError(#[from] reqwest::Error),
 }
 
 impl From<EthereumError> for ProviderError {
@@ -268,6 +272,26 @@ impl Ethereum {
 
     pub fn walletconnect_available(&self) -> bool {
         self.wc_project_id.is_some()
+    }
+
+    pub async fn fetch_available_wallets(
+        &self,
+    ) -> Result<Vec<explorer::WalletDescription>, EthereumError> {
+        match &self.wc_project_id {
+            None => Err(EthereumError::Unavailable),
+            Some(p_id) => {
+                let client = reqwest::Client::new();
+                let resp: explorer::ExplorerResponse = client
+                    .get(format!(
+                        "https://explorer-api.walletconnect.com/v3/wallets?projectId={p_id}",
+                    ))
+                    .send()
+                    .await?
+                    .json()
+                    .await?;
+                Ok(resp.parse_wallets())
+            }
+        }
     }
 
     pub async fn connect(
