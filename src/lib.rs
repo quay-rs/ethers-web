@@ -289,7 +289,7 @@ impl Ethereum {
                     .await?
                     .json()
                     .await?;
-                Ok(resp.parse_wallets())
+                Ok(resp.parse_wallets(&p_id))
             }
         }
     }

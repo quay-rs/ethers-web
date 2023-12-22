@@ -10,10 +10,11 @@ pub struct ExplorerResponse {
 }
 
 impl ExplorerResponse {
-    pub fn parse_wallets(&self) -> Vec<WalletDescription> {
+    pub fn parse_wallets(&self, project_id: &str) -> Vec<WalletDescription> {
         let mut wallets: Vec<WalletDescription> = Vec::new();
         for (_, wallet) in &self.listings {
-            if let Ok(w) = wallet.try_into() {
+            if let Ok(mut w) = TryInto::<WalletDescription>::try_into(wallet) {
+                w.project_id = project_id.to_string();
                 wallets.push(w)
             }
         }
@@ -74,6 +75,7 @@ impl TryInto<WalletDescription> for &WalletData {
             name: self.name.clone(),
             chains,
             image_id: self.image_id.clone(),
+            project_id: "".to_owned(),
             desktop_schema,
             mobile_schema,
         })
@@ -105,6 +107,7 @@ pub struct WalletDescription {
     pub name: String,
     pub chains: Vec<u64>,
     pub image_id: String,
+    pub project_id: String,
     pub desktop_schema: Option<String>,
     pub mobile_schema: Option<String>,
 }
@@ -117,8 +120,8 @@ impl WalletDescription {
             ImageSize::Large => "lg",
         };
         format!(
-            "https://explorer-api.walletconnect.com/v3/logo/{size_mark}/{}",
-            self.image_id
+            "https://explorer-api.walletconnect.com/v3/logo/{size_mark}/{}?projectId={}",
+            self.image_id, self.project_id
         )
     }
 }
