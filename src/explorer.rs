@@ -54,11 +54,29 @@ impl TryInto<WalletDescription> for &WalletData {
             .collect::<Vec<_>>();
         let mobile_schema = match &self.mobile {
             None => None,
-            Some(l) => l.native.clone(),
+            Some(l) => match &l.native {
+                Some(url) => {
+                    if url.len() > 0 {
+                        Some(url.clone())
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            },
         };
         let desktop_schema = match &self.desktop {
             None => None,
-            Some(l) => l.native.clone(),
+            Some(l) => match &l.native {
+                Some(url) => {
+                    if url.len() > 0 {
+                        Some(url.clone())
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            },
         };
 
         if mobile_schema.is_none() && desktop_schema.is_none() {
