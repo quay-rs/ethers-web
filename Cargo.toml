@@ -6,7 +6,8 @@ categories = ["cryptography::cryptocurrencies"]
 keywords = ["crypto", "ethers", "ethereum", "web3", "wasm", "walletconnect"]
 
 [dependencies]
-walletconnect-client = { git = "https://github.com/quay-rs/walletconnect-client" }
+walletconnect-client = { path = "../walletconnect-client/" }
+# walletconnect-client = { git = "https://github.com/quay-rs/walletconnect-client" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 async-trait = "0.1"
 getrandom = { version = "0.2", features = ["js"] }
@@ -31,4 +32,4 @@ derive_more = "0.99"
 futures = "0.3.28"
 qrcode-generator = "4.1.9"
 unsafe-send-sync = "0.1.0"
-reqwest = { version = "0.11.23", features = ["json"] }
+reqwest = "0.11"
