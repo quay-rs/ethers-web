@@ -90,6 +90,11 @@ impl WalletConnectProvider {
         self.client.borrow_mut().get_accounts_for_chain_id(chain_id)
     }
 
+    pub async fn switch_network(&self, chain_id: u64) -> Result<(), Error> {
+        self.client.borrow_mut().switch_network(chain_id).await?;
+        Ok(())
+    }
+
     /// Sends request via WalletConnectClient
     pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
         &self,

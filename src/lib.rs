@@ -398,6 +398,16 @@ impl Ethereum {
         }
     }
 
+    pub async fn switch_network(&mut self, chain_id: u64) -> Result<(), EthereumError> {
+        match &self.wallet {
+            WebProvider::WalletConnect(provider) => {
+                provider.switch_network(chain_id).await?;
+                Ok(())
+            }
+            _ => Err(EthereumError::Unavailable),
+        }
+    }
+
     async fn connect_wc(&mut self) -> Result<(), EthereumError> {
         if !self.walletconnect_available() {
             return Err(EthereumError::Unavailable);
