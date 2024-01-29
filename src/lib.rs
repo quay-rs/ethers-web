@@ -434,7 +434,7 @@ impl Ethereum {
             return Err(EthereumError::Unavailable);
         }
 
-        let this = self.clone();
+        let mut this = self.clone();
         let mut wc = WalletConnect::connect(
             self.wc_project_id.clone().unwrap().into(),
             self.chain_id.unwrap_or_else(|| 1),
@@ -444,9 +444,11 @@ impl Ethereum {
                 WCEvent::Connected => this.emit_event(Event::Connected),
                 WCEvent::Disconnected => this.emit_event(Event::Disconnected),
                 WCEvent::ChainChanged(chain_id) => {
+                    this.chain_id = Some(chain_id);
                     this.emit_event(Event::ChainIdChanged(Some(chain_id)))
                 }
                 WCEvent::AccountsChanged(accounts) => {
+                    this.accounts = Some(accounts.clone());
                     this.emit_event(Event::AccountsChanged(Some(accounts)))
                 }
             })),
