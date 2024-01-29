@@ -34,27 +34,7 @@ impl UseEthereum {
         if (*self.ethereum).is_available(wallet_type) {
             spawn_local(async move {
                 let mut eth = (*this.ethereum).clone();
-                let me = this.clone();
-                if eth
-                    .connect(
-                        wallet_type,
-                        Some(Arc::new(move |event| match event {
-                            Event::ConnectionWaiting(url) => {
-                                debug!("{url}");
-                                me.pairing_url.set(Some(url));
-                            }
-                            Event::Connected => {
-                                me.connected.set(true);
-                                me.pairing_url.set(None)
-                            }
-                            Event::Disconnected => me.connected.set(false),
-                            Event::ChainIdChanged(chain_id) => me.chain_id.set(chain_id),
-                            Event::AccountsChanged(accounts) => me.accounts.set(accounts),
-                        })),
-                    )
-                    .await
-                    .is_ok()
-                {
+                if eth.connect(wallet_type).await.is_ok() {
                     this.ethereum.set(eth);
                 }
             });
@@ -129,8 +109,28 @@ pub fn use_ethereum() -> UseEthereum {
     let connected = use_state(move || false);
     let accounts = use_state(move || None as Option<Vec<Address>>);
     let chain_id = use_state(move || None as Option<u64>);
-    let ethereum = use_state(move || builder.url("http://localhost").build());
     let pairing_url = use_state(move || None as Option<String>);
+
+    let con = connected.clone();
+    let acc = accounts.clone();
+    let cid = chain_id.clone();
+    let purl = pairing_url.clone();
+
+    builder.listener(Arc::new(move |event| match event {
+        Event::ConnectionWaiting(url) => {
+            debug!("{url}");
+            purl.set(Some(url));
+        }
+        Event::Connected => {
+            con.set(true);
+            purl.set(None)
+        }
+        Event::Disconnected => con.set(false),
+        Event::ChainIdChanged(chain_id) => cid.set(chain_id),
+        Event::AccountsChanged(accounts) => acc.set(accounts),
+    }));
+
+    let ethereum = use_state(move || builder.url("http://localhost").build());
 
     UseEthereum {
         ethereum,

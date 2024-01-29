@@ -9,9 +9,11 @@ use ethers::{
     types::{Address, Signature, SignatureError, U256},
     utils::ConversionError,
 };
+use gloo_storage::{LocalStorage, Storage};
 use gloo_utils::format::JsValueSerdeExt;
 use hex::FromHexError;
-use serde::{de::DeserializeOwned, Serialize};
+use log::debug;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     sync::Arc,
@@ -20,8 +22,11 @@ use thiserror::Error;
 use unsafe_send_sync::UnsafeSendSync;
 use walletconnect_client::{
     prelude::{Event as WCEvent, Metadata},
-    WalletConnect,
+    WalletConnect, WalletConnectState,
 };
+use wasm_bindgen_futures::spawn_local;
+
+const STATUS_KEY: &str = "ETHERS_WEB_STATE";
 
 use walletconnect::WalletConnectProvider;
 
@@ -33,6 +38,7 @@ pub struct EthereumBuilder {
     pub wc_project_id: Option<String>,
     pub icons: Vec<String>,
     pub rpc_node: Option<String>,
+    pub listener: Option<Arc<dyn Fn(Event)>>,
 }
 
 impl EthereumBuilder {
@@ -45,6 +51,7 @@ impl EthereumBuilder {
             wc_project_id: None,
             icons: Vec::new(),
             rpc_node: None,
+            listener: None,
         }
     }
 
@@ -78,6 +85,11 @@ impl EthereumBuilder {
         self
     }
 
+    pub fn listener(&mut self, listener: Arc<dyn Fn(Event)>) -> &Self {
+        self.listener = Some(listener);
+        self
+    }
+
     pub fn add_icon(&mut self, icon_url: &str) -> &Self {
         self.icons.push(icon_url.to_string());
         self
@@ -92,6 +104,7 @@ impl EthereumBuilder {
             self.wc_project_id.clone(),
             self.icons.clone(),
             self.rpc_node.clone(),
+            self.listener.clone(),
         )
     }
 }
@@ -192,6 +205,14 @@ impl PartialEq for WebProvider {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct EthereumState {
+    pub metadata: Metadata,
+    pub accounts: Option<Vec<Address>>,
+    pub chain_id: Option<u64>,
+    pub wc_state: Option<WalletConnectState>,
+}
+
 #[derive(Clone)]
 pub struct Ethereum {
     pub metadata: Metadata,
@@ -233,16 +254,23 @@ impl Ethereum {
         wc_project_id: Option<String>,
         icons: Vec<String>,
         rpc_node: Option<String>,
+        listener: Option<Arc<dyn Fn(Event)>>,
     ) -> Self {
-        Ethereum {
+        let eth = Ethereum {
             metadata: Metadata::from(&name, &description, &url, icons),
             wc_project_id,
             rpc_node,
             accounts: None,
             chain_id: Some(chain_id),
             wallet: WebProvider::None,
-            listener: None,
-        }
+            listener: match listener {
+                Some(listener) => Some(UnsafeSendSync::new(listener)),
+                None => None,
+            },
+        };
+
+        eth.restore();
+        eth
     }
 
     pub fn is_available(&self, wallet_type: WalletType) -> bool {
@@ -294,21 +322,14 @@ impl Ethereum {
         }
     }
 
-    pub async fn connect(
-        &mut self,
-        wallet: WalletType,
-        listener: Option<Arc<dyn Fn(Event)>>,
-    ) -> Result<(), EthereumError> {
+    pub async fn connect(&mut self, wallet: WalletType) -> Result<(), EthereumError> {
         if self.wallet != WebProvider::None {
             return Err(EthereumError::AlreadyConnected);
         }
-        self.listener = match listener {
-            Some(listener) => Some(UnsafeSendSync::new(listener)),
-            None => None,
-        };
+
         match wallet {
             WalletType::Injected => self.connect_injected().await,
-            WalletType::WalletConnect => self.connect_wc().await,
+            WalletType::WalletConnect => self.connect_wc(None).await,
         }
     }
 
@@ -408,7 +429,7 @@ impl Ethereum {
         }
     }
 
-    async fn connect_wc(&mut self) -> Result<(), EthereumError> {
+    async fn connect_wc(&mut self, state: Option<WalletConnectState>) -> Result<(), EthereumError> {
         if !self.walletconnect_available() {
             return Err(EthereumError::Unavailable);
         }
@@ -418,6 +439,7 @@ impl Ethereum {
             self.wc_project_id.clone().unwrap().into(),
             self.chain_id.unwrap_or_else(|| 1),
             self.metadata.clone(),
+            state.clone(),
             Some(Box::new(move |event| match event {
                 WCEvent::Connected => this.emit_event(Event::Connected),
                 WCEvent::Disconnected => this.emit_event(Event::Disconnected),
@@ -430,12 +452,29 @@ impl Ethereum {
             })),
         )?;
 
-        let url = wc.initiate_session().await?;
+        let url = wc
+            .initiate_session(match state {
+                None => None,
+                Some(ref s) => Some(
+                    s.keys
+                        .clone()
+                        .into_iter()
+                        .map(|(t, _)| t)
+                        .collect::<Vec<_>>(),
+                ),
+            })
+            .await?;
 
         self.wallet =
             WebProvider::WalletConnect(WalletConnectProvider::new(wc, self.rpc_node.clone()));
 
-        self.emit_event(Event::ConnectionWaiting(url));
+        if url.len() > 0 {
+            self.emit_event(Event::ConnectionWaiting(url));
+        } else {
+            self.emit_event(Event::Connected);
+            self.emit_event(Event::ChainIdChanged(self.chain_id));
+            self.emit_event(Event::AccountsChanged(self.accounts.clone()));
+        }
 
         Ok(())
     }
@@ -459,9 +498,46 @@ impl Ethereum {
         }
     }
 
+    fn restore(&self) {
+        if let Ok(state) = LocalStorage::get::<EthereumState>(STATUS_KEY) {
+            let mut this = self.clone();
+            spawn_local(async move {
+                match state.wc_state {
+                    None => _ = this.connect_injected().await,
+                    Some(wc_settings) => _ = this.connect_wc(Some(wc_settings)).await,
+                }
+            });
+        }
+    }
+
     fn emit_event(&self, event: Event) {
+        match event {
+            Event::Disconnected | Event::ChainIdChanged(None) | Event::AccountsChanged(None) => {
+                _ = LocalStorage::delete(STATUS_KEY)
+            }
+            _ => {
+                let state = self.collect_state();
+                debug!(
+                    "Saving chain id {:?} and accounts {:?}",
+                    state.chain_id, state.accounts
+                );
+                _ = LocalStorage::set(STATUS_KEY, state);
+            }
+        };
         if let Some(listener) = &self.listener {
             listener(event);
+        }
+    }
+
+    fn collect_state(&self) -> EthereumState {
+        EthereumState {
+            metadata: self.metadata.clone(),
+            accounts: self.accounts.clone(),
+            chain_id: self.chain_id,
+            wc_state: match &self.wallet {
+                WebProvider::WalletConnect(provider) => Some(provider.get_state()),
+                _ => None,
+            },
         }
     }
 }

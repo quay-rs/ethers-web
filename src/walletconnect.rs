@@ -15,7 +15,7 @@ use std::{
 };
 use thiserror::Error;
 use unsafe_send_sync::UnsafeSendSync;
-use walletconnect_client::prelude::*;
+use walletconnect_client::{prelude::*, WalletConnectState};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -71,6 +71,10 @@ impl WalletConnectProvider {
             client: UnsafeSendSync::new(Arc::new(RefCell::new(client))),
             provider,
         }
+    }
+
+    pub fn get_state(&self) -> WalletConnectState {
+        self.client.borrow().get_state()
     }
 
     pub async fn disconnect(&self) {
