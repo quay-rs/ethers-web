@@ -72,19 +72,11 @@ impl UseEthereum {
     }
 
     pub fn account(&self) -> Address {
-        *self
-            .accounts
-            .as_ref()
-            .and_then(|a| a.first())
-            .unwrap_or(&Address::zero())
+        *self.accounts.as_ref().and_then(|a| a.first()).unwrap_or(&Address::zero())
     }
 
     pub fn main_account(&self) -> String {
-        self.accounts
-            .as_ref()
-            .and_then(|a| a.first())
-            .unwrap_or(&Address::zero())
-            .to_string()
+        self.accounts.as_ref().and_then(|a| a.first()).unwrap_or(&Address::zero()).to_string()
     }
 
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
@@ -93,6 +85,36 @@ impl UseEthereum {
         from: &Address,
     ) -> Result<Signature, EthereumError> {
         (*self.ethereum).sign_typed_data(data, from).await
+    }
+
+    pub fn run(&self) {
+        let con = self.connected.clone();
+        let acc = self.accounts.clone();
+        let cid = self.chain_id.clone();
+        let purl = self.pairing_url.clone();
+        let eth = self.ethereum.clone();
+
+        spawn_local(async move {
+            loop {
+                match eth.next().await {
+                    Ok(Some(event)) => match event {
+                        Event::ConnectionWaiting(url) => {
+                            debug!("{url}");
+                            purl.set(Some(url));
+                        }
+                        Event::Connected => {
+                            con.set(true);
+                            purl.set(None)
+                        }
+                        Event::Disconnected => con.set(false),
+                        Event::ChainIdChanged(chain_id) => cid.set(chain_id),
+                        Event::AccountsChanged(accounts) => acc.set(accounts),
+                    },
+                    Ok(None) => debug!("No event, continuing"),
+                    Err(err) => error!("Error on fetching event message {err:?}"),
+                }
+            }
+        });
     }
 }
 
@@ -111,32 +133,10 @@ pub fn use_ethereum() -> UseEthereum {
     let chain_id = use_state(move || None as Option<u64>);
     let pairing_url = use_state(move || None as Option<String>);
 
-    let con = connected.clone();
-    let acc = accounts.clone();
-    let cid = chain_id.clone();
-    let purl = pairing_url.clone();
-
-    builder.listener(Arc::new(move |event| match event {
-        Event::ConnectionWaiting(url) => {
-            debug!("{url}");
-            purl.set(Some(url));
-        }
-        Event::Connected => {
-            con.set(true);
-            purl.set(None)
-        }
-        Event::Disconnected => con.set(false),
-        Event::ChainIdChanged(chain_id) => cid.set(chain_id),
-        Event::AccountsChanged(accounts) => acc.set(accounts),
-    }));
-
     let ethereum = use_state(move || builder.url("http://localhost").build());
 
-    UseEthereum {
-        ethereum,
-        connected,
-        accounts,
-        chain_id,
-        pairing_url,
-    }
+    let eth = UseEthereum { ethereum, connected, accounts, chain_id, pairing_url };
+    eth.run();
+
+    eth
 }

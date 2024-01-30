@@ -8,8 +8,6 @@ use log::error;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_value, json};
 use std::{
-    borrow::BorrowMut,
-    cell::RefCell,
     fmt::{Debug, Formatter, Result as FmtResult},
     str::FromStr,
 };
@@ -74,28 +72,33 @@ impl WalletConnectProvider {
         self.client.get_state()
     }
 
-    pub async fn disconnect(&mut self) {
+    pub async fn disconnect(&self) {
         self.client.disconnect();
     }
 
+    /// Get chain id
     pub fn chain_id(&self) -> u64 {
         self.client.chain_id()
     }
 
+    /// Get current valid address
     pub fn address(&self) -> ethers::types::Address {
         self.client.address()
     }
 
+    /// Get all accounts connected to currently set chain_id
     pub fn accounts(&self) -> Option<Vec<ethers::types::Address>> {
         self.accounts_for_chain(self.client.chain_id())
     }
 
+    /// Get all accounts available for chain id
     pub fn accounts_for_chain(&self, chain_id: u64) -> Option<Vec<ethers::types::Address>> {
         self.client.get_accounts_for_chain_id(chain_id)
     }
 
+    /// Get next message
     pub async fn next(
-        &mut self,
+        &self,
     ) -> Result<Option<walletconnect_client::event::Event>, walletconnect_client::Error> {
         self.client.next().await
     }
@@ -108,11 +111,10 @@ impl WalletConnectProvider {
     ) -> Result<R, Error> {
         let params = json!(params);
 
-        let wc_client = &self.client;
-        let chain_id = wc_client.chain_id();
+        let chain_id = self.client.chain_id();
 
-        if wc_client.supports_method(method) {
-            Ok(from_value(wc_client.request(method, Some(params), chain_id).await?)?)
+        if self.client.supports_method(method) {
+            Ok(from_value(self.client.request(method, Some(params), chain_id).await?)?)
         } else {
             if let Some(provider) = &self.provider {
                 Ok(provider.request(method, params).await?)

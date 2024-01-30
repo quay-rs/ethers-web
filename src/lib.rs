@@ -22,10 +22,7 @@ use tokio::sync::{
     mpsc::{channel, Receiver, Sender},
     Mutex,
 };
-use walletconnect_client::{
-    prelude::{Event as WCEvent, Metadata},
-    WalletConnect, WalletConnectState,
-};
+use walletconnect_client::{prelude::Metadata, WalletConnect, WalletConnectState};
 use wasm_bindgen_futures::spawn_local;
 
 const STATUS_KEY: &str = "ETHERS_WEB_STATE";
@@ -188,6 +185,15 @@ pub enum WebProvider {
     WalletConnect(WalletConnectProvider),
 }
 
+impl WebProvider {
+    fn is_walletconnect(&self) -> bool {
+        match self {
+            Self::WalletConnect(_) => true,
+            _ => false,
+        }
+    }
+}
+
 impl PartialEq for WebProvider {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -214,6 +220,27 @@ pub enum Event {
     Disconnected,
     ChainIdChanged(Option<u64>),
     AccountsChanged(Option<Vec<Address>>),
+}
+
+impl Event {
+    fn is_connection_established(&self) -> bool {
+        match self {
+            Self::ConnectionWaiting(_)
+            | Self::Disconnected
+            | Self::ChainIdChanged(None)
+            | Self::AccountsChanged(None) => false,
+            _ => true,
+        }
+    }
+}
+
+impl From<walletconnect_client::event::Event> for Event {
+    fn from(value: walletconnect_client::event::Event) -> Self {
+        match value {
+            walletconnect_client::event::Event::Disconnected => Self::Disconnected,
+            walletconnect_client::event::Event::Connected => Self::Connected,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -247,7 +274,7 @@ impl Ethereum {
         icons: Vec<String>,
         rpc_node: Option<String>,
     ) -> Self {
-        let (sender, mut receiver) = channel::<Event>(10);
+        let (sender, receiver) = channel::<Event>(10);
 
         let eth = Ethereum {
             metadata: Metadata::from(&name, &description, &url, icons),
@@ -405,20 +432,38 @@ impl Ethereum {
         Ok(())
     }
 
-    pub async fn next(&mut self) -> Result<Option<Event>, EthereumError> {
+    pub async fn next(&self) -> Result<Option<Event>, EthereumError> {
         let event = match &self.wallet {
             WebProvider::WalletConnect(provider) => {
-                let recvr = self.receiver.lock().await;
+                let mut recvr = self.receiver.lock().await;
                 tokio::select! {
                     e = recvr.recv() => Ok(e),
                     e = provider.next() => Ok(match e? { Some(e) => Some(e.into()), None => None })
                 }
             }
-            WebProvider::Injected(_) => Ok(self.receiver.lock().await.recv().await),
-            _ => Err(EthereumError::NotConnected),
+            _ => Ok(self.receiver.lock().await.recv().await),
         };
 
-        if let Ok(Some(e)) = event {}
+        if let Ok(Some(e)) = &event {
+            match e {
+                Event::Connected => match &self.wallet {
+                    WebProvider::WalletConnect(provider) => {
+                        _ = self
+                            .sender
+                            .send(Event::ChainIdChanged(Some(provider.chain_id())))
+                            .await;
+                        _ = self.sender.send(Event::AccountsChanged(provider.accounts())).await;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+            if !e.is_connection_established() {
+                _ = LocalStorage::delete(STATUS_KEY)
+            } else {
+                _ = LocalStorage::set(STATUS_KEY, self.collect_state());
+            }
+        }
 
         event
     }
@@ -461,7 +506,7 @@ impl Ethereum {
             return Err(EthereumError::Unavailable);
         }
 
-        let mut wc = WalletConnect::connect(
+        let wc = WalletConnect::connect(
             self.wc_project_id.clone().unwrap().into(),
             self.chain_id.unwrap_or_else(|| 1),
             self.metadata.clone(),
@@ -519,19 +564,6 @@ impl Ethereum {
             });
         }
     }
-
-    // fn emit_event(&self, event: Event) {
-    //     match event {
-    //         Event::Disconnected | Event::ChainIdChanged(None) | Event::AccountsChanged(None) => {
-    //             _ = LocalStorage::delete(STATUS_KEY)
-    //         }
-    //         _ => {
-    //             let state = self.collect_state();
-    //             debug!("Saving chain id {:?} and accounts {:?}", state.chain_id, state.accounts);
-    //             _ = LocalStorage::set(STATUS_KEY, state);
-    //         }
-    //     };
-    // }
 
     fn collect_state(&self) -> EthereumState {
         EthereumState {
