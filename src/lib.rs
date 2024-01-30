@@ -12,6 +12,7 @@ use ethers::{
 use gloo_storage::{LocalStorage, Storage};
 use gloo_utils::format::JsValueSerdeExt;
 use hex::FromHexError;
+use log::debug;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -361,6 +362,7 @@ impl Ethereum {
 
         _ = self.sender.send(Event::ChainIdChanged(None)).await;
         _ = self.sender.send(Event::AccountsChanged(None)).await;
+        _ = self.sender.send(Event::Disconnected).await;
     }
 
     async fn connect_injected(&mut self) -> Result<(), EthereumError> {
@@ -369,7 +371,9 @@ impl Ethereum {
         }
 
         let injected = Eip1193::new();
-
+        self.wallet = WebProvider::Injected(injected.clone());
+        self.accounts = Some(self.request_accounts().await?);
+        self.chain_id = Some(self.request_chain_id().await?.low_u64());
         {
             let s = self.sender.clone();
             _ = injected.clone().on(
@@ -421,6 +425,7 @@ impl Ethereum {
             );
         }
 
+        _ = self.sender.send(Event::Connected).await;
         if self.chain_id.is_some() {
             _ = self.sender.send(Event::ChainIdChanged(self.chain_id)).await;
         }
@@ -458,6 +463,7 @@ impl Ethereum {
                 },
                 _ => {}
             }
+            debug!("Working with event {e:?}");
             if !e.is_connection_established() {
                 _ = LocalStorage::delete(STATUS_KEY)
             } else {

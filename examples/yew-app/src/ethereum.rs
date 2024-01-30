@@ -1,3 +1,4 @@
+use core::borrow::BorrowMut;
 use std::sync::Arc;
 
 use ethers::{
@@ -49,10 +50,8 @@ impl UseEthereum {
     }
 
     pub fn disconnect(&mut self) {
-        let mut eth = (*self.ethereum).clone();
-        eth.disconnect();
-        self.ethereum.set(eth);
-        self.connected.set(false);
+        // TODO: This doesn't work!
+        // self.ethereum.borrow_mut().disconnect();
     }
 
     pub fn is_connected(&self) -> bool {
