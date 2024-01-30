@@ -449,6 +449,7 @@ impl Ethereum {
             _ => Ok(self.receiver.lock().await.recv().await),
         };
 
+        debug!("Working with event {event:?}");
         if let Ok(Some(e)) = &event {
             match e {
                 Event::Connected => match &self.wallet {
@@ -463,7 +464,7 @@ impl Ethereum {
                 },
                 _ => {}
             }
-            debug!("Working with event {e:?}");
+
             if !e.is_connection_established() {
                 _ = LocalStorage::delete(STATUS_KEY)
             } else {

@@ -51,7 +51,8 @@ impl UseEthereum {
 
     pub fn disconnect(&mut self) {
         // TODO: This doesn't work!
-        // self.ethereum.borrow_mut().disconnect();
+        let mut eth = (*self.ethereum).clone();
+        let _ = eth.disconnect();
     }
 
     pub fn is_connected(&self) -> bool {
