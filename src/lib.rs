@@ -16,10 +16,12 @@ use log::debug;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
-    sync::Arc,
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Arc, Mutex,
+    },
 };
 use thiserror::Error;
-use unsafe_send_sync::UnsafeSendSync;
 use walletconnect_client::{
     prelude::{Event as WCEvent, Metadata},
     WalletConnect, WalletConnectState,
@@ -38,7 +40,6 @@ pub struct EthereumBuilder {
     pub wc_project_id: Option<String>,
     pub icons: Vec<String>,
     pub rpc_node: Option<String>,
-    pub listener: Option<Arc<dyn Fn(Event)>>,
 }
 
 impl EthereumBuilder {
@@ -51,7 +52,6 @@ impl EthereumBuilder {
             wc_project_id: None,
             icons: Vec::new(),
             rpc_node: None,
-            listener: None,
         }
     }
 
@@ -85,11 +85,6 @@ impl EthereumBuilder {
         self
     }
 
-    pub fn listener(&mut self, listener: Arc<dyn Fn(Event)>) -> &Self {
-        self.listener = Some(listener);
-        self
-    }
-
     pub fn add_icon(&mut self, icon_url: &str) -> &Self {
         self.icons.push(icon_url.to_string());
         self
@@ -104,7 +99,6 @@ impl EthereumBuilder {
             self.wc_project_id.clone(),
             self.icons.clone(),
             self.rpc_node.clone(),
-            self.listener.clone(),
         )
     }
 }
@@ -213,6 +207,15 @@ pub struct EthereumState {
     pub wc_state: Option<WalletConnectState>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Event {
+    ConnectionWaiting(String),
+    Connected,
+    Disconnected,
+    ChainIdChanged(Option<u64>),
+    AccountsChanged(Option<Vec<Address>>),
+}
+
 #[derive(Clone)]
 pub struct Ethereum {
     pub metadata: Metadata,
@@ -221,28 +224,17 @@ pub struct Ethereum {
 
     accounts: Option<Vec<Address>>,
     chain_id: Option<u64>,
-    wallet: WebProvider,
 
-    listener: Option<UnsafeSendSync<Arc<dyn Fn(Event)>>>,
+    sender: Sender<Event>,
+    receiver: Arc<Mutex<Receiver<Event>>>,
+
+    wallet: WebProvider,
 }
 
 impl Debug for Ethereum {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "Ethereum with accounts: {:?}, chain_id: {:?} ",
-            self.accounts, self.chain_id
-        )
+        write!(f, "Ethereum with accounts: {:?}, chain_id: {:?} ", self.accounts, self.chain_id)
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Event {
-    ConnectionWaiting(String),
-    Connected,
-    Disconnected,
-    ChainIdChanged(Option<u64>),
-    AccountsChanged(Option<Vec<Address>>),
 }
 
 impl Ethereum {
@@ -254,19 +246,18 @@ impl Ethereum {
         wc_project_id: Option<String>,
         icons: Vec<String>,
         rpc_node: Option<String>,
-        listener: Option<Arc<dyn Fn(Event)>>,
     ) -> Self {
+        let (sender, mut receiver) = channel::<Event>();
+
         let eth = Ethereum {
             metadata: Metadata::from(&name, &description, &url, icons),
             wc_project_id,
             rpc_node,
             accounts: None,
             chain_id: Some(chain_id),
+            sender,
+            receiver: Arc::new(Mutex::new(receiver)),
             wallet: WebProvider::None,
-            listener: match listener {
-                Some(listener) => Some(UnsafeSendSync::new(listener)),
-                None => None,
-            },
         };
 
         eth.restore();
@@ -341,8 +332,8 @@ impl Ethereum {
         self.accounts = None;
         self.chain_id = None;
 
-        self.emit_event(Event::ChainIdChanged(None));
-        self.emit_event(Event::AccountsChanged(None));
+        _ = self.sender.send(Event::ChainIdChanged(None));
+        _ = self.sender.send(Event::AccountsChanged(None));
     }
 
     async fn connect_injected(&mut self) -> Result<(), EthereumError> {
@@ -351,40 +342,36 @@ impl Ethereum {
         }
 
         let injected = Eip1193::new();
-        self.wallet = WebProvider::Injected(injected.clone());
-
-        self.accounts = Some(self.request_accounts().await?);
-        self.chain_id = Some(self.request_chain_id().await?.low_u64());
 
         {
-            let mut this = self.clone();
+            let s = self.sender.clone();
             _ = injected.clone().on(
                 "disconnected",
                 Box::new(move |_| {
-                    this.disconnect();
-                    this.emit_event(Event::Disconnected);
+                    _ = s.send(Event::Disconnected);
                 }),
             );
         }
         {
-            let mut this = self.clone();
+            let s = self.sender.clone();
             _ = injected.clone().on(
                 "chainChanged",
                 Box::new(move |chain_id| {
-                    this.chain_id = chain_id.into_serde::<U256>().ok().map(|c| c.low_u64());
-                    this.emit_event(Event::ChainIdChanged(this.chain_id));
+                    _ = s.send(Event::ChainIdChanged(
+                        chain_id.into_serde::<U256>().ok().map(|c| c.low_u64()),
+                    ));
                 }),
             );
         }
         {
-            let mut this = self.clone();
+            let s = self.sender.clone();
             _ = injected.clone().on(
                 "accountsChanged",
                 Box::new(move |accounts| {
-                    this.accounts = accounts.into_serde::<Vec<Address>>().ok();
-                    this.emit_event(Event::AccountsChanged(this.accounts.clone()));
-                    if let Some(acc) = &this.accounts {
-                        this.emit_event(if acc.is_empty() {
+                    let accounts = accounts.into_serde::<Vec<Address>>().ok();
+                    _ = s.send(Event::AccountsChanged(accounts.clone()));
+                    if let Some(acc) = &accounts {
+                        _ = s.send(if acc.is_empty() {
                             Event::Disconnected
                         } else {
                             Event::Connected
@@ -393,16 +380,21 @@ impl Ethereum {
                 }),
             );
         }
-        self.emit_event(Event::Connected);
+
         if self.chain_id.is_some() {
-            self.emit_event(Event::ChainIdChanged(self.chain_id));
+            _ = self.sender.send(Event::ChainIdChanged(self.chain_id));
         }
         if self.accounts.is_some() {
-            self.emit_event(Event::AccountsChanged(self.accounts.clone()));
-            self.emit_event(Event::Connected);
+            _ = self.sender.send(Event::AccountsChanged(self.accounts.clone()));
+            _ = self.sender.send(Event::Connected);
         }
 
         Ok(())
+    }
+
+    pub async fn next(&mut self) -> Result<Event, EthereumError> {
+        // TODO: Here we go with all the logic!
+        Err(EthereumError::NotConnected)
     }
 
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
@@ -419,11 +411,20 @@ impl Ethereum {
         }
     }
 
-    pub async fn switch_network(&mut self, chain_id: u64) -> Result<(), EthereumError> {
+    pub fn switch_network(&mut self, chain_id: u64) -> Result<(), EthereumError> {
         match &self.wallet {
             WebProvider::WalletConnect(provider) => {
-                provider.switch_network(chain_id).await?;
-                Ok(())
+                // We need to check if we've got any accounts under that id
+                if let Some(accounts) = provider.accounts_for_chain(chain_id) {
+                    if accounts.len() > 0 {
+                        self.accounts = Some(accounts.clone());
+                        self.chain_id = Some(chain_id);
+                        _ = self.sender.send(Event::ChainIdChanged(Some(chain_id)));
+                        _ = self.sender.send(Event::AccountsChanged(Some(accounts)));
+                        return Ok(());
+                    }
+                }
+                Err(EthereumError::Unavailable)
             }
             _ => Err(EthereumError::Unavailable),
         }
@@ -434,36 +435,17 @@ impl Ethereum {
             return Err(EthereumError::Unavailable);
         }
 
-        let mut this = self.clone();
         let mut wc = WalletConnect::connect(
             self.wc_project_id.clone().unwrap().into(),
             self.chain_id.unwrap_or_else(|| 1),
             self.metadata.clone(),
             state.clone(),
-            Some(Box::new(move |event| match event {
-                WCEvent::Connected => this.emit_event(Event::Connected),
-                WCEvent::Disconnected => this.emit_event(Event::Disconnected),
-                WCEvent::ChainChanged(chain_id) => {
-                    this.chain_id = Some(chain_id);
-                    this.emit_event(Event::ChainIdChanged(Some(chain_id)))
-                }
-                WCEvent::AccountsChanged(accounts) => {
-                    this.accounts = Some(accounts.clone());
-                    this.emit_event(Event::AccountsChanged(Some(accounts)))
-                }
-            })),
         )?;
 
         let url = wc
             .initiate_session(match state {
                 None => None,
-                Some(ref s) => Some(
-                    s.keys
-                        .clone()
-                        .into_iter()
-                        .map(|(t, _)| t)
-                        .collect::<Vec<_>>(),
-                ),
+                Some(ref s) => Some(s.keys.clone().into_iter().map(|(t, _)| t).collect::<Vec<_>>()),
             })
             .await?;
 
@@ -471,11 +453,11 @@ impl Ethereum {
             WebProvider::WalletConnect(WalletConnectProvider::new(wc, self.rpc_node.clone()));
 
         if url.len() > 0 {
-            self.emit_event(Event::ConnectionWaiting(url));
+            _ = self.sender.send(Event::ConnectionWaiting(url));
         } else {
-            self.emit_event(Event::Connected);
-            self.emit_event(Event::ChainIdChanged(self.chain_id));
-            self.emit_event(Event::AccountsChanged(self.accounts.clone()));
+            _ = self.sender.send(Event::Connected);
+            _ = self.sender.send(Event::ChainIdChanged(self.chain_id));
+            _ = self.sender.send(Event::AccountsChanged(self.accounts.clone()));
         }
 
         Ok(())
@@ -512,24 +494,18 @@ impl Ethereum {
         }
     }
 
-    fn emit_event(&self, event: Event) {
-        match event {
-            Event::Disconnected | Event::ChainIdChanged(None) | Event::AccountsChanged(None) => {
-                _ = LocalStorage::delete(STATUS_KEY)
-            }
-            _ => {
-                let state = self.collect_state();
-                debug!(
-                    "Saving chain id {:?} and accounts {:?}",
-                    state.chain_id, state.accounts
-                );
-                _ = LocalStorage::set(STATUS_KEY, state);
-            }
-        };
-        if let Some(listener) = &self.listener {
-            listener(event);
-        }
-    }
+    // fn emit_event(&self, event: Event) {
+    //     match event {
+    //         Event::Disconnected | Event::ChainIdChanged(None) | Event::AccountsChanged(None) => {
+    //             _ = LocalStorage::delete(STATUS_KEY)
+    //         }
+    //         _ => {
+    //             let state = self.collect_state();
+    //             debug!("Saving chain id {:?} and accounts {:?}", state.chain_id, state.accounts);
+    //             _ = LocalStorage::set(STATUS_KEY, state);
+    //         }
+    //     };
+    // }
 
     fn collect_state(&self) -> EthereumState {
         EthereumState {

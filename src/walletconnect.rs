@@ -67,10 +67,7 @@ impl WalletConnectProvider {
             }
             _ => None,
         };
-        Self {
-            client: UnsafeSendSync::new(Arc::new(RefCell::new(client))),
-            provider,
-        }
+        Self { client: UnsafeSendSync::new(Arc::new(RefCell::new(client))), provider }
     }
 
     pub fn get_state(&self) -> WalletConnectState {
@@ -90,13 +87,11 @@ impl WalletConnectProvider {
     }
 
     pub fn accounts(&self) -> Option<Vec<ethers::types::Address>> {
-        let chain_id = self.client.borrow().chain_id();
-        self.client.borrow_mut().get_accounts_for_chain_id(chain_id)
+        self.accounts_for_chain(self.client.borrow().chain_id())
     }
 
-    pub async fn switch_network(&self, chain_id: u64) -> Result<(), Error> {
-        self.client.borrow_mut().switch_network(chain_id).await?;
-        Ok(())
+    pub fn accounts_for_chain(&self, chain_id: u64) -> Option<Vec<ethers::types::Address>> {
+        self.client.borrow_mut().get_accounts_for_chain_id(chain_id)
     }
 
     /// Sends request via WalletConnectClient
@@ -111,9 +106,7 @@ impl WalletConnectProvider {
         let chain_id = wc_client.chain_id();
 
         if wc_client.supports_method(method) {
-            Ok(from_value(
-                wc_client.request(method, Some(params), chain_id).await?,
-            )?)
+            Ok(from_value(wc_client.request(method, Some(params), chain_id).await?)?)
         } else {
             if let Some(provider) = &self.provider {
                 Ok((*provider.borrow_mut()).request(method, params).await?)
