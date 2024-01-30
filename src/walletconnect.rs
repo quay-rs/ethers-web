@@ -8,10 +8,10 @@ use log::error;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_value, json};
 use std::{
+    borrow::BorrowMut,
     cell::RefCell,
     fmt::{Debug, Formatter, Result as FmtResult},
     str::FromStr,
-    sync::Arc,
 };
 use thiserror::Error;
 use unsafe_send_sync::UnsafeSendSync;
@@ -40,8 +40,8 @@ pub enum Error {
 
 #[derive(Clone)]
 pub struct WalletConnectProvider {
-    client: UnsafeSendSync<Arc<RefCell<WalletConnect>>>,
-    provider: Option<UnsafeSendSync<RefCell<Http>>>,
+    client: UnsafeSendSync<WalletConnect>,
+    provider: Option<UnsafeSendSync<Http>>,
 }
 
 impl Debug for WalletConnectProvider {
@@ -60,38 +60,44 @@ impl WalletConnectProvider {
         let provider = match rpc_url {
             Some(url) => {
                 if let Ok(p) = Http::from_str(&url) {
-                    Some(UnsafeSendSync::new(RefCell::new(p)))
+                    Some(UnsafeSendSync::new(p))
                 } else {
                     None
                 }
             }
             _ => None,
         };
-        Self { client: UnsafeSendSync::new(Arc::new(RefCell::new(client))), provider }
+        Self { client: UnsafeSendSync::new(client), provider }
     }
 
     pub fn get_state(&self) -> WalletConnectState {
-        self.client.borrow().get_state()
+        self.client.get_state()
     }
 
-    pub async fn disconnect(&self) {
-        self.client.borrow_mut().disconnect();
+    pub async fn disconnect(&mut self) {
+        self.client.disconnect();
     }
 
     pub fn chain_id(&self) -> u64 {
-        self.client.borrow_mut().chain_id()
+        self.client.chain_id()
     }
 
     pub fn address(&self) -> ethers::types::Address {
-        self.client.borrow_mut().address()
+        self.client.address()
     }
 
     pub fn accounts(&self) -> Option<Vec<ethers::types::Address>> {
-        self.accounts_for_chain(self.client.borrow().chain_id())
+        self.accounts_for_chain(self.client.chain_id())
     }
 
     pub fn accounts_for_chain(&self, chain_id: u64) -> Option<Vec<ethers::types::Address>> {
-        self.client.borrow_mut().get_accounts_for_chain_id(chain_id)
+        self.client.get_accounts_for_chain_id(chain_id)
+    }
+
+    pub async fn next(
+        &mut self,
+    ) -> Result<Option<walletconnect_client::event::Event>, walletconnect_client::Error> {
+        self.client.next().await
     }
 
     /// Sends request via WalletConnectClient
@@ -102,14 +108,14 @@ impl WalletConnectProvider {
     ) -> Result<R, Error> {
         let params = json!(params);
 
-        let mut wc_client = self.client.borrow_mut();
+        let wc_client = &self.client;
         let chain_id = wc_client.chain_id();
 
         if wc_client.supports_method(method) {
             Ok(from_value(wc_client.request(method, Some(params), chain_id).await?)?)
         } else {
             if let Some(provider) = &self.provider {
-                Ok((*provider.borrow_mut()).request(method, params).await?)
+                Ok(provider.request(method, params).await?)
             } else {
                 Err(Error::MissingProvider)
             }
