@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use ethers::{
     providers::Provider,
     types::{Address, Signature},
@@ -30,31 +28,12 @@ impl PartialEq for UseEthereum {
 impl UseEthereum {
     pub fn connect(&mut self, wallet_type: WalletType) {
         // We check if it is possible to connect
-        let this = self.clone();
+        let mut this = self.clone();
+        this.disconnect();
         if (*self.ethereum).is_available(wallet_type) {
             spawn_local(async move {
                 let mut eth = (*this.ethereum).clone();
-                let me = this.clone();
-                if eth
-                    .connect(
-                        wallet_type,
-                        Some(Arc::new(move |event| match event {
-                            Event::ConnectionWaiting(url) => {
-                                debug!("{url}");
-                                me.pairing_url.set(Some(url));
-                            }
-                            Event::Connected => {
-                                me.connected.set(true);
-                                me.pairing_url.set(None)
-                            }
-                            Event::Disconnected => me.connected.set(false),
-                            Event::ChainIdChanged(chain_id) => me.chain_id.set(chain_id),
-                            Event::AccountsChanged(accounts) => me.accounts.set(accounts),
-                        })),
-                    )
-                    .await
-                    .is_ok()
-                {
+                if eth.connect(wallet_type).await.is_ok() {
                     this.ethereum.set(eth);
                 }
             });
@@ -69,10 +48,14 @@ impl UseEthereum {
     }
 
     pub fn disconnect(&mut self) {
-        let mut eth = (*self.ethereum).clone();
-        eth.disconnect();
-        self.ethereum.set(eth);
-        self.connected.set(false);
+        if self.is_connected() {
+            let mut eth = (*self.ethereum).clone();
+            let ethereum = self.ethereum.clone();
+            spawn_local(async move {
+                let _ = eth.disconnect().await;
+                ethereum.set(eth);
+            });
+        }
     }
 
     pub fn is_connected(&self) -> bool {
@@ -92,19 +75,11 @@ impl UseEthereum {
     }
 
     pub fn account(&self) -> Address {
-        *self
-            .accounts
-            .as_ref()
-            .and_then(|a| a.first())
-            .unwrap_or(&Address::zero())
+        *self.accounts.as_ref().and_then(|a| a.first()).unwrap_or(&Address::zero())
     }
 
     pub fn main_account(&self) -> String {
-        self.accounts
-            .as_ref()
-            .and_then(|a| a.first())
-            .unwrap_or(&Address::zero())
-            .to_string()
+        self.accounts.as_ref().and_then(|a| a.first()).unwrap_or(&Address::zero()).to_string()
     }
 
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
@@ -129,14 +104,61 @@ pub fn use_ethereum() -> UseEthereum {
     let connected = use_state(move || false);
     let accounts = use_state(move || None as Option<Vec<Address>>);
     let chain_id = use_state(move || None as Option<u64>);
-    let ethereum = use_state(move || builder.url("http://localhost").build());
     let pairing_url = use_state(move || None as Option<String>);
 
-    UseEthereum {
-        ethereum,
-        connected,
-        accounts,
-        chain_id,
-        pairing_url,
-    }
+    let ethereum = use_state(move || builder.url("http://localhost").build());
+
+    let con = connected.clone();
+    let acc = accounts.clone();
+    let cid = chain_id.clone();
+    let purl = pairing_url.clone();
+
+    use_effect_with(ethereum.clone(), move |ethereum| {
+        if ethereum.has_provider() {
+            debug!("Start running");
+            let eth = ethereum.clone();
+            spawn_local(async move {
+                let mut keep_looping = true;
+                while keep_looping {
+                    match eth.next().await {
+                        Ok(Some(event)) => match event {
+                            Event::ConnectionWaiting(url) => {
+                                debug!("{url}");
+                                purl.set(Some(url));
+                            }
+                            Event::Connected => {
+                                con.set(true);
+                                purl.set(None)
+                            }
+                            Event::Disconnected => {
+                                con.set(false);
+                                keep_looping = false;
+                            }
+                            Event::ChainIdChanged(chain_id) => cid.set(chain_id),
+                            Event::AccountsChanged(accounts) => acc.set(accounts),
+                        },
+                        Ok(None) => {}
+                        Err(err) => {
+                            keep_looping = false;
+                            error!("Error on fetching event message {err:?}");
+                        }
+                    }
+                }
+                debug!("Listener loop ended");
+            });
+        }
+    });
+
+    let eth = ethereum.clone();
+    yew_hooks::use_effect_once(move || {
+        spawn_local(async move {
+            let mut e = (*eth).clone();
+            if e.restore().await {
+                eth.set(e);
+            }
+        });
+        || {}
+    });
+
+    UseEthereum { ethereum, connected, accounts, chain_id, pairing_url }
 }
