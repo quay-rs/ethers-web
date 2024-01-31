@@ -10,23 +10,19 @@ pub fn code_view() -> Html {
 
     let code = use_state(|| String::new());
 
-    use_effect_with_deps(
-        {
-            let code = code.clone();
-            move |url| match url {
-                Some(url) => {
-                    let png_vec =
-                        qrcode_generator::to_png_to_vec(&url, QrCodeEcc::Low, 512).unwrap();
-                    code.set(format!(
-                        "data:image/png;base64,{}",
-                        data_encoding::BASE64.encode(&png_vec)
-                    ));
-                }
-                None => code.set(String::new()),
+    use_effect_with((*ethereum.pairing_url).clone(), {
+        let code = code.clone();
+        move |url| match url {
+            Some(url) => {
+                let png_vec = qrcode_generator::to_png_to_vec(&url, QrCodeEcc::Low, 512).unwrap();
+                code.set(format!(
+                    "data:image/png;base64,{}",
+                    data_encoding::BASE64.encode(&png_vec)
+                ));
             }
-        },
-        (*ethereum.pairing_url).clone(),
-    );
+            None => code.set(String::new()),
+        }
+    });
 
     html! {
         <img src={ (*code).clone() } />

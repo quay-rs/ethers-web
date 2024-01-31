@@ -154,43 +154,52 @@ pub fn use_ethereum() -> UseEthereum {
     let cid = chain_id.clone();
     let purl = pairing_url.clone();
 
-    use_effect_with_deps(
-        move |ethereum| {
-            if ethereum.has_provider() {
-                debug!("Start running");
-                let eth = ethereum.clone();
-                spawn_local(async move {
-                    let mut keep_looping = true;
-                    while keep_looping {
-                        match eth.next().await {
-                            Ok(Some(event)) => match event {
-                                Event::ConnectionWaiting(url) => {
-                                    debug!("{url}");
-                                    purl.set(Some(url));
-                                }
-                                Event::Connected => {
-                                    con.set(true);
-                                    purl.set(None)
-                                }
-                                Event::Disconnected => {
-                                    con.set(false);
-                                    keep_looping = false;
-                                }
-                                Event::ChainIdChanged(chain_id) => cid.set(chain_id),
-                                Event::AccountsChanged(accounts) => acc.set(accounts),
-                            },
-                            Ok(None) => debug!("No event, continuing"),
-                            Err(err) => {
-                                keep_looping = false;
-                                error!("Error on fetching event message {err:?}");
+    use_effect_with(ethereum.clone(), move |ethereum| {
+        if ethereum.has_provider() {
+            debug!("Start running");
+            let eth = ethereum.clone();
+            spawn_local(async move {
+                let mut keep_looping = true;
+                while keep_looping {
+                    match eth.next().await {
+                        Ok(Some(event)) => match event {
+                            Event::ConnectionWaiting(url) => {
+                                debug!("{url}");
+                                purl.set(Some(url));
                             }
+                            Event::Connected => {
+                                con.set(true);
+                                purl.set(None)
+                            }
+                            Event::Disconnected => {
+                                con.set(false);
+                                keep_looping = false;
+                            }
+                            Event::ChainIdChanged(chain_id) => cid.set(chain_id),
+                            Event::AccountsChanged(accounts) => acc.set(accounts),
+                        },
+                        Ok(None) => debug!("No event, continuing"),
+                        Err(err) => {
+                            keep_looping = false;
+                            error!("Error on fetching event message {err:?}");
                         }
                     }
-                    debug!("Listener loop ended");
-                });
+                }
+                debug!("Listener loop ended");
+            });
+        }
+    });
+
+    let eth = ethereum.clone();
+    yew_hooks::use_effect_once(move || {
+        spawn_local(async move {
+            let mut e = (*eth).clone();
+            if e.restore().await {
+                eth.set(e);
             }
-        },
-        ethereum.clone(),
-    );
+        });
+        || {}
+    });
+
     UseEthereum { ethereum, connected, accounts, chain_id, pairing_url }
 }

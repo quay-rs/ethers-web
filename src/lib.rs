@@ -214,8 +214,6 @@ impl PartialEq for WebProvider {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EthereumState {
-    pub metadata: Metadata,
-    pub accounts: Option<Vec<Address>>,
     pub chain_id: Option<u64>,
     pub wc_state: Option<WalletConnectState>,
 }
@@ -294,7 +292,7 @@ impl Ethereum {
     ) -> Self {
         let (sender, receiver) = channel::<Event>(10);
 
-        let eth = Ethereum {
+        Ethereum {
             metadata: Metadata::from(&name, &description, &url, icons),
             wc_project_id,
             rpc_node,
@@ -303,10 +301,7 @@ impl Ethereum {
             sender,
             receiver: Arc::new(Mutex::new(receiver)),
             wallet: WebProvider::None,
-        };
-
-        eth.restore();
-        eth
+        }
     }
 
     pub fn is_available(&self, wallet_type: WalletType) -> bool {
@@ -374,12 +369,10 @@ impl Ethereum {
     }
 
     pub async fn disconnect(&mut self) {
-        debug!("Disconnecting");
         if let WebProvider::WalletConnect(wc) = &self.wallet {
             wc.disconnect();
         }
 
-        debug!("Setting disconnect states");
         self.wallet = WebProvider::None;
         self.accounts = None;
         self.chain_id = None;
@@ -462,12 +455,6 @@ impl Ethereum {
     }
 
     pub async fn next(&self) -> Result<Option<Event>, EthereumError> {
-        debug!("Waiting for event");
-        match &self.wallet {
-            WebProvider::None => debug!("None type wait"),
-            WebProvider::WalletConnect(_) => debug!("WC wait"),
-            WebProvider::Injected(_) => debug!("Injected wait"),
-        }
         let event = match &self.wallet {
             WebProvider::WalletConnect(provider) => {
                 let mut recvr = self.receiver.lock().await;
@@ -479,7 +466,6 @@ impl Ethereum {
             _ => Ok(self.receiver.lock().await.recv().await),
         };
 
-        debug!("Working with event {event:?}");
         if let Ok(Some(e)) = &event {
             match e {
                 Event::Connected => match &self.wallet {
@@ -591,27 +577,24 @@ impl Ethereum {
         }
     }
 
-    fn restore(&self) {
+    pub async fn restore(&mut self) -> bool {
         if let Ok(state) = LocalStorage::get::<EthereumState>(STATUS_KEY) {
-            let mut this = self.clone();
-            spawn_local(async move {
-                match state.wc_state {
-                    None => _ = this.connect_injected().await,
-                    Some(wc_settings) => _ = this.connect_wc(Some(wc_settings)).await,
-                }
-            });
+            match state.wc_state {
+                None => _ = self.connect_injected().await,
+                Some(wc_settings) => _ = self.connect_wc(Some(wc_settings)).await,
+            }
+            true
+        } else {
+            false
         }
     }
 
     fn collect_state(&self) -> EthereumState {
-        EthereumState {
-            metadata: self.metadata.clone(),
-            accounts: self.accounts.clone(),
-            chain_id: self.chain_id,
-            wc_state: match &self.wallet {
-                WebProvider::WalletConnect(provider) => Some(provider.get_state()),
-                _ => None,
-            },
+        match &self.wallet {
+            WebProvider::WalletConnect(p) => {
+                EthereumState { chain_id: Some(p.chain_id()), wc_state: Some(p.get_state()) }
+            }
+            _ => EthereumState { chain_id: self.chain_id, wc_state: None },
         }
     }
 }
