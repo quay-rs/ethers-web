@@ -193,6 +193,12 @@ impl WebProvider {
             _ => false,
         }
     }
+    fn is_some(&self) -> bool {
+        match self {
+            Self::None => false,
+            _ => true,
+        }
+    }
 }
 
 impl PartialEq for WebProvider {
@@ -259,6 +265,17 @@ pub struct Ethereum {
     wallet: WebProvider,
 }
 
+impl PartialEq for Ethereum {
+    fn eq(&self, other: &Self) -> bool {
+        self.metadata == other.metadata
+            && self.wc_project_id == other.wc_project_id
+            && self.rpc_node == other.rpc_node
+            && self.accounts == other.accounts
+            && self.chain_id == other.chain_id
+            && self.wallet == other.wallet
+    }
+}
+
 impl Debug for Ethereum {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "Ethereum with accounts: {:?}, chain_id: {:?} ", self.accounts, self.chain_id)
@@ -297,6 +314,10 @@ impl Ethereum {
             WalletType::Injected => self.injected_available(),
             WalletType::WalletConnect => self.walletconnect_available(),
         }
+    }
+
+    pub fn has_provider(&self) -> bool {
+        self.wallet.is_some()
     }
 
     pub fn available_wallets(&self) -> Vec<WalletType> {
@@ -353,9 +374,12 @@ impl Ethereum {
     }
 
     pub async fn disconnect(&mut self) {
+        debug!("Disconnecting");
         if let WebProvider::WalletConnect(wc) = &self.wallet {
             wc.disconnect();
         }
+
+        debug!("Setting disconnect states");
         self.wallet = WebProvider::None;
         self.accounts = None;
         self.chain_id = None;
@@ -438,6 +462,12 @@ impl Ethereum {
     }
 
     pub async fn next(&self) -> Result<Option<Event>, EthereumError> {
+        debug!("Waiting for event");
+        match &self.wallet {
+            WebProvider::None => debug!("None type wait"),
+            WebProvider::WalletConnect(_) => debug!("WC wait"),
+            WebProvider::Injected(_) => debug!("Injected wait"),
+        }
         let event = match &self.wallet {
             WebProvider::WalletConnect(provider) => {
                 let mut recvr = self.receiver.lock().await;
@@ -527,6 +557,7 @@ impl Ethereum {
             })
             .await?;
 
+        debug!("Setting provider");
         self.wallet =
             WebProvider::WalletConnect(WalletConnectProvider::new(wc, self.rpc_node.clone()));
 

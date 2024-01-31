@@ -1,4 +1,3 @@
-use core::borrow::BorrowMut;
 use std::sync::Arc;
 
 use ethers::{
@@ -31,7 +30,8 @@ impl PartialEq for UseEthereum {
 impl UseEthereum {
     pub fn connect(&mut self, wallet_type: WalletType) {
         // We check if it is possible to connect
-        let this = self.clone();
+        let mut this = self.clone();
+        this.disconnect();
         if (*self.ethereum).is_available(wallet_type) {
             spawn_local(async move {
                 let mut eth = (*this.ethereum).clone();
@@ -50,9 +50,14 @@ impl UseEthereum {
     }
 
     pub fn disconnect(&mut self) {
-        // TODO: This doesn't work!
-        let mut eth = (*self.ethereum).clone();
-        let _ = eth.disconnect();
+        if self.is_connected() {
+            let mut eth = (*self.ethereum).clone();
+            let ethereum = self.ethereum.clone();
+            spawn_local(async move {
+                let _ = eth.disconnect().await;
+                ethereum.set(eth);
+            });
+        }
     }
 
     pub fn is_connected(&self) -> bool {
@@ -94,8 +99,10 @@ impl UseEthereum {
         let purl = self.pairing_url.clone();
         let eth = self.ethereum.clone();
 
+        debug!("Spawning listeners");
         spawn_local(async move {
-            loop {
+            let mut keep_looping = true;
+            while keep_looping {
                 match eth.next().await {
                     Ok(Some(event)) => match event {
                         Event::ConnectionWaiting(url) => {
@@ -106,14 +113,21 @@ impl UseEthereum {
                             con.set(true);
                             purl.set(None)
                         }
-                        Event::Disconnected => con.set(false),
+                        Event::Disconnected => {
+                            con.set(false);
+                            keep_looping = false;
+                        }
                         Event::ChainIdChanged(chain_id) => cid.set(chain_id),
                         Event::AccountsChanged(accounts) => acc.set(accounts),
                     },
                     Ok(None) => debug!("No event, continuing"),
-                    Err(err) => error!("Error on fetching event message {err:?}"),
+                    Err(err) => {
+                        keep_looping = false;
+                        error!("Error on fetching event message {err:?}");
+                    }
                 }
             }
+            debug!("Listener loop ended");
         });
     }
 }
@@ -135,8 +149,48 @@ pub fn use_ethereum() -> UseEthereum {
 
     let ethereum = use_state(move || builder.url("http://localhost").build());
 
-    let eth = UseEthereum { ethereum, connected, accounts, chain_id, pairing_url };
-    eth.run();
+    let con = connected.clone();
+    let acc = accounts.clone();
+    let cid = chain_id.clone();
+    let purl = pairing_url.clone();
 
-    eth
+    use_effect_with_deps(
+        move |ethereum| {
+            if ethereum.has_provider() {
+                debug!("Start running");
+                let eth = ethereum.clone();
+                spawn_local(async move {
+                    let mut keep_looping = true;
+                    while keep_looping {
+                        match eth.next().await {
+                            Ok(Some(event)) => match event {
+                                Event::ConnectionWaiting(url) => {
+                                    debug!("{url}");
+                                    purl.set(Some(url));
+                                }
+                                Event::Connected => {
+                                    con.set(true);
+                                    purl.set(None)
+                                }
+                                Event::Disconnected => {
+                                    con.set(false);
+                                    keep_looping = false;
+                                }
+                                Event::ChainIdChanged(chain_id) => cid.set(chain_id),
+                                Event::AccountsChanged(accounts) => acc.set(accounts),
+                            },
+                            Ok(None) => debug!("No event, continuing"),
+                            Err(err) => {
+                                keep_looping = false;
+                                error!("Error on fetching event message {err:?}");
+                            }
+                        }
+                    }
+                    debug!("Listener loop ended");
+                });
+            }
+        },
+        ethereum.clone(),
+    );
+    UseEthereum { ethereum, connected, accounts, chain_id, pairing_url }
 }
