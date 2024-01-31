@@ -73,7 +73,7 @@ impl WalletConnectProvider {
     }
 
     pub async fn disconnect(&self) {
-        self.client.disconnect();
+        _ = self.client.disconnect().await;
     }
 
     /// Get chain id

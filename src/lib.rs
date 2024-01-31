@@ -12,7 +12,7 @@ use ethers::{
 use gloo_storage::{LocalStorage, Storage};
 use gloo_utils::format::JsValueSerdeExt;
 use hex::FromHexError;
-use log::debug;
+use log::error;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -187,12 +187,6 @@ pub enum WebProvider {
 }
 
 impl WebProvider {
-    fn is_walletconnect(&self) -> bool {
-        match self {
-            Self::WalletConnect(_) => true,
-            _ => false,
-        }
-    }
     fn is_some(&self) -> bool {
         match self {
             Self::None => false,
@@ -370,7 +364,7 @@ impl Ethereum {
 
     pub async fn disconnect(&mut self) {
         if let WebProvider::WalletConnect(wc) = &self.wallet {
-            wc.disconnect();
+            wc.disconnect().await;
         }
 
         self.wallet = WebProvider::None;
@@ -543,7 +537,6 @@ impl Ethereum {
             })
             .await?;
 
-        debug!("Setting provider");
         self.wallet =
             WebProvider::WalletConnect(WalletConnectProvider::new(wc, self.rpc_node.clone()));
 
@@ -578,14 +571,18 @@ impl Ethereum {
     }
 
     pub async fn restore(&mut self) -> bool {
-        if let Ok(state) = LocalStorage::get::<EthereumState>(STATUS_KEY) {
-            match state.wc_state {
-                None => _ = self.connect_injected().await,
-                Some(wc_settings) => _ = self.connect_wc(Some(wc_settings)).await,
+        match LocalStorage::get::<EthereumState>(STATUS_KEY) {
+            Ok(state) => {
+                match state.wc_state {
+                    None => _ = self.connect_injected().await,
+                    Some(wc_settings) => _ = self.connect_wc(Some(wc_settings)).await,
+                }
+                true
             }
-            true
-        } else {
-            false
+            Err(err) => {
+                error!("Status not loaded {err:?}!");
+                false
+            }
         }
     }
 

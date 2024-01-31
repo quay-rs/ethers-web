@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use ethers::{
     providers::Provider,
     types::{Address, Signature},
@@ -99,7 +97,6 @@ impl UseEthereum {
         let purl = self.pairing_url.clone();
         let eth = self.ethereum.clone();
 
-        debug!("Spawning listeners");
         spawn_local(async move {
             let mut keep_looping = true;
             while keep_looping {
@@ -120,14 +117,13 @@ impl UseEthereum {
                         Event::ChainIdChanged(chain_id) => cid.set(chain_id),
                         Event::AccountsChanged(accounts) => acc.set(accounts),
                     },
-                    Ok(None) => debug!("No event, continuing"),
+                    Ok(None) => {}
                     Err(err) => {
                         keep_looping = false;
                         error!("Error on fetching event message {err:?}");
                     }
                 }
             }
-            debug!("Listener loop ended");
         });
     }
 }
@@ -192,8 +188,10 @@ pub fn use_ethereum() -> UseEthereum {
 
     let eth = ethereum.clone();
     yew_hooks::use_effect_once(move || {
+        debug!("Going once!");
         spawn_local(async move {
             let mut e = (*eth).clone();
+            debug!("Restoring");
             if e.restore().await {
                 eth.set(e);
             }
