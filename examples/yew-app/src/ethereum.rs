@@ -89,43 +89,6 @@ impl UseEthereum {
     ) -> Result<Signature, EthereumError> {
         (*self.ethereum).sign_typed_data(data, from).await
     }
-
-    pub fn run(&self) {
-        let con = self.connected.clone();
-        let acc = self.accounts.clone();
-        let cid = self.chain_id.clone();
-        let purl = self.pairing_url.clone();
-        let eth = self.ethereum.clone();
-
-        spawn_local(async move {
-            let mut keep_looping = true;
-            while keep_looping {
-                match eth.next().await {
-                    Ok(Some(event)) => match event {
-                        Event::ConnectionWaiting(url) => {
-                            debug!("{url}");
-                            purl.set(Some(url));
-                        }
-                        Event::Connected => {
-                            con.set(true);
-                            purl.set(None)
-                        }
-                        Event::Disconnected => {
-                            con.set(false);
-                            keep_looping = false;
-                        }
-                        Event::ChainIdChanged(chain_id) => cid.set(chain_id),
-                        Event::AccountsChanged(accounts) => acc.set(accounts),
-                    },
-                    Ok(None) => {}
-                    Err(err) => {
-                        keep_looping = false;
-                        error!("Error on fetching event message {err:?}");
-                    }
-                }
-            }
-        });
-    }
 }
 
 #[hook]
