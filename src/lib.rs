@@ -420,14 +420,17 @@ impl Ethereum {
                     spawn_local(async move {
                         let accounts = accounts.into_serde::<Vec<Address>>().ok();
                         _ = sender.send(Event::AccountsChanged(accounts.clone())).await;
-                        if let Some(acc) = &accounts {
-                            _ = sender
-                                .send(if acc.is_empty() {
-                                    Event::Disconnected
-                                } else {
-                                    Event::Connected
-                                })
-                                .await;
+                        match &accounts {
+                            Some(acc) => {
+                                _ = sender
+                                    .send(if acc.is_empty() {
+                                        Event::Disconnected
+                                    } else {
+                                        Event::Connected
+                                    })
+                                    .await;
+                            }
+                            None => _ = sender.send(Event::Disconnected),
                         }
                     });
                 }),
