@@ -382,9 +382,7 @@ impl Ethereum {
         }
 
         let injected = Eip1193::new();
-        self.wallet = WebProvider::Injected(injected.clone());
-        self.accounts = Some(self.request_accounts().await?);
-        self.chain_id = Some(self.request_chain_id().await?.low_u64());
+
         {
             let s = self.sender.clone();
             _ = injected.clone().on(
@@ -435,6 +433,9 @@ impl Ethereum {
                 }),
             );
         }
+        self.wallet = WebProvider::Injected(injected);
+        self.accounts = Some(self.request_accounts().await?);
+        self.chain_id = Some(self.request_chain_id().await?.low_u64());
 
         _ = self.sender.send(Event::Connected).await;
         if self.chain_id.is_some() {
@@ -442,7 +443,6 @@ impl Ethereum {
         }
         if self.accounts.is_some() {
             _ = self.sender.send(Event::AccountsChanged(self.accounts.clone())).await;
-            _ = self.sender.send(Event::Connected).await;
         }
 
         Ok(())
