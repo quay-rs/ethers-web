@@ -46,9 +46,10 @@ impl Debug for WalletConnectProvider {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
-            "Wallet Connect provider" // "Wallet Connect signer {:?} chain id: {}",
-                                      // self.address(),
-                                      // self.chain_id()
+            "Wallet Connect signer {:?} chain id: {}, rpc provider: {:?}",
+            self.address(),
+            self.chain_id(),
+            self.provider.clone().unwrap().url()
         )
     }
 }

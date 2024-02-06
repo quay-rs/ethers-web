@@ -7,6 +7,7 @@ use ethers::{
     },
 };
 use gloo_utils::format::JsValueSerdeExt;
+use log::debug;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 use wasm_bindgen::{closure::Closure, prelude::*, JsValue};
@@ -76,7 +77,7 @@ pub enum Eip1193Error {
     HexError(#[from] FromHexError),
 }
 
-#[wasm_bindgen(inline_js = "export function get_provider_js() {return window.ethereum}")]
+#[wasm_bindgen(inline_js = "export function get_provider_js() { return window.ethereum}")]
 extern "C" {
     #[wasm_bindgen(catch)]
     fn get_provider_js() -> Result<Option<Ethereum>, JsValue>;
@@ -129,6 +130,7 @@ impl Eip1193 {
         let t_params = JsValue::from_serde(&params)?;
         let typename_object = JsValue::from_str("type");
 
+        debug!("Method {method} params: {:?}", serde_json::json!(params));
         let parsed_params = if !t_params.is_null() {
             js_sys::Array::from(&t_params).map(&mut |val, _, _| {
                 if let Some(trans) = js_sys::Object::try_from(&val) {
@@ -164,6 +166,7 @@ impl Eip1193 {
             js_sys::Array::new()
         };
 
+        debug!("Requesting method {method}");
         let payload = Eip1193Request::new(method.to_string(), parsed_params.into());
 
         match ethereum.request(payload).await {
