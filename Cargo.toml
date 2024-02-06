@@ -6,7 +6,7 @@ categories = ["cryptography::cryptocurrencies"]
 keywords = ["crypto", "ethers", "ethereum", "web3", "wasm", "walletconnect"]
 
 [dependencies]
-walletconnect-client = { git = "https://github.com/quay-rs/walletconnect-client", commit = "63dedcf5ed1f8f762ef90432eea16527646ed44f" }
+walletconnect-client = { git = "https://github.com/quay-rs/walletconnect-client", rev = "63dedcf5ed1f8f762ef90432eea16527646ed44f" }
 tokio = { version = "1.35", default-features = false, features = ["sync", "macros"] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 async-trait = "0.1"
