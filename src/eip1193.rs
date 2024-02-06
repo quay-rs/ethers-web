@@ -7,11 +7,13 @@ use ethers::{
     },
 };
 use gloo_utils::format::JsValueSerdeExt;
+use log::debug;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 use wasm_bindgen::{closure::Closure, prelude::*, JsValue};
 
 #[wasm_bindgen]
+#[derive(Debug)]
 pub struct Eip1193Request {
     method: String,
     params: JsValue,
@@ -166,6 +168,7 @@ impl Eip1193 {
 
         let payload = Eip1193Request::new(method.to_string(), parsed_params.into());
 
+        debug!("Sending request: {:?}", payload);
         match ethereum.request(payload).await {
             Ok(r) => match r.into_serde() {
                 Ok(r) => Ok(r),
