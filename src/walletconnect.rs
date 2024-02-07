@@ -44,12 +44,7 @@ pub struct WalletConnectProvider {
 
 impl Debug for WalletConnectProvider {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "Wallet Connect provider" // "Wallet Connect signer {:?} chain id: {}",
-                                      // self.address(),
-                                      // self.chain_id()
-        )
+        write!(f, "Wallet Connect signer {:?} chain id: {}", self.address(), self.chain_id())
     }
 }
 
@@ -79,6 +74,11 @@ impl WalletConnectProvider {
     /// Get chain id
     pub fn chain_id(&self) -> u64 {
         self.client.chain_id()
+    }
+
+    /// Get chain id
+    pub fn set_chain_id(&mut self, chain_id: u64) {
+        self.client.set_chain_id(chain_id)
     }
 
     /// Get current valid address

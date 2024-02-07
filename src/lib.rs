@@ -503,13 +503,14 @@ impl Ethereum {
     }
 
     pub async fn switch_network(&mut self, chain_id: u64) -> Result<(), EthereumError> {
-        match &self.wallet {
-            WebProvider::WalletConnect(provider) => {
+        match self.wallet {
+            WebProvider::WalletConnect(ref mut provider) => {
                 // We need to check if we've got any accounts under that id
                 if let Some(accounts) = provider.accounts_for_chain(chain_id) {
                     if accounts.len() > 0 {
                         self.accounts = Some(accounts.clone());
                         self.chain_id = Some(chain_id);
+                        provider.set_chain_id(chain_id);
                         _ = self.sender.send(Event::ChainIdChanged(Some(chain_id))).await;
                         _ = self.sender.send(Event::AccountsChanged(Some(accounts))).await;
                         return Ok(());
