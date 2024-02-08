@@ -1,5 +1,5 @@
 use ethers::{
-    providers::{Http, HttpClientError, JsonRpcClient},
+    providers::{Http, HttpClientError, JsonRpcClient, JsonRpcError},
     types::{Address, Signature, SignatureError},
     utils::{hex::decode, serialize},
 };
@@ -34,6 +34,15 @@ pub enum Error {
 
     #[error(transparent)]
     HexError(#[from] FromHexError),
+}
+
+impl Error {
+    pub fn as_error_response(&self) -> Option<&JsonRpcError> {
+        match self {
+            Error::WalletConnectError(e) => e.as_error_respose(),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone)]

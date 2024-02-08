@@ -164,6 +164,7 @@ impl RpcError for EthereumError {
                 Eip1193Error::JsonRpcError(e) => Some(e),
                 _ => None,
             },
+            EthereumError::WalletConnectError(e) => e.as_error_response(),
             _ => None,
         }
     }
