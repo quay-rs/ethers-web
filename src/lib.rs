@@ -312,6 +312,14 @@ impl Ethereum {
         self.wallet.is_some()
     }
 
+    pub fn connected_wallet_type(&self) -> Option<WalletType> {
+        match &self.wallet {
+            WebProvider::None => None,
+            WebProvider::Injected(_) => Some(WalletType::Injected),
+            WebProvider::WalletConnect(_) => Some(WalletType::WalletConnect),
+        }
+    }
+
     pub fn available_wallets(&self) -> Vec<WalletType> {
         let mut types = Vec::new();
 
