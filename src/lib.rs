@@ -218,6 +218,7 @@ pub enum Event {
     ConnectionWaiting(String),
     Connected,
     Disconnected,
+    Broken,
     ChainIdChanged(Option<u64>),
     AccountsChanged(Option<Vec<Address>>),
 }
@@ -239,6 +240,7 @@ impl From<walletconnect_client::event::Event> for Event {
         match value {
             walletconnect_client::event::Event::Disconnected => Self::Disconnected,
             walletconnect_client::event::Event::Connected => Self::Connected,
+            walletconnect_client::event::Event::Broken => Self::Broken,
         }
     }
 }
