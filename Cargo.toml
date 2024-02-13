@@ -15,6 +15,7 @@ default-target = "wasm32-unknown-unknown"
 
 [dependencies]
 walletconnect-client = "0.1"
+# walletconnect-client = { path = "../walletconnect-client/" }
 tokio = { version = "1.35", default-features = false, features = ["sync", "macros"] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 async-trait = "0.1"

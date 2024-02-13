@@ -603,7 +603,7 @@ impl Ethereum {
     async fn request_accounts(&self) -> Result<Vec<Address>, EthereumError> {
         match &self.wallet {
             WebProvider::None => Err(EthereumError::NotConnected),
-            WebProvider::Injected(_) => Ok(self.request("eth_requestAccounts", ()).await?),
+            WebProvider::Injected(injected) => Ok(injected.request_accounts().await?),
             WebProvider::WalletConnect(wc) => match wc.accounts() {
                 Some(a) => Ok(a),
                 None => Err(EthereumError::Unavailable),
@@ -614,7 +614,7 @@ impl Ethereum {
     async fn request_chain_id(&self) -> Result<U256, EthereumError> {
         match &self.wallet {
             WebProvider::None => Err(EthereumError::NotConnected),
-            WebProvider::Injected(_) => Ok(self.request("eth_chainId", ()).await?),
+            WebProvider::Injected(injected) => Ok(injected.chain_id().await?.into()),
             WebProvider::WalletConnect(wc) => Ok(wc.chain_id().into()),
         }
     }
@@ -651,7 +651,7 @@ impl Ethereum {
 impl JsonRpcClient for Ethereum {
     type Error = EthereumError;
 
-    async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
+    async fn request<T: Serialize + Send + Sync + std::fmt::Debug, R: DeserializeOwned + Send>(
         &self,
         method: &str,
         params: T,
