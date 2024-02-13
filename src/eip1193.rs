@@ -1,5 +1,6 @@
+use async_trait::async_trait;
 use ethers::{
-    providers::JsonRpcError,
+    providers::{JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError},
     utils::{
         hex::{decode, FromHexError},
@@ -100,6 +101,9 @@ extern "C" {
     fn removeListener(_: &Ethereum, eventName: &str, listener: &Closure<dyn FnMut(JsValue)>);
 }
 
+unsafe impl Send for Ethereum {}
+unsafe impl Sync for Ethereum {}
+
 impl Ethereum {
     pub fn default() -> Result<Self, Eip1193Error> {
         if let Ok(Some(eth)) = get_provider_js() {
@@ -120,9 +124,42 @@ impl From<JsValue> for Eip1193Error {
     }
 }
 
-impl Eip1193 {
+impl RpcError for Eip1193Error {
+    fn as_error_response(&self) -> Option<&JsonRpcError> {
+        match self {
+            Eip1193Error::JsonRpcError(err) => Some(err),
+            _ => None,
+        }
+    }
+
+    fn as_serde_error(&self) -> Option<&serde_json::Error> {
+        match self {
+            Eip1193Error::SerdeJson(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+impl Into<ProviderError> for Eip1193Error {
+    fn into(self) -> ProviderError {
+        match self {
+            Eip1193Error::JsValueError(s) => ProviderError::CustomError(s.to_string()),
+            Eip1193Error::SerdeJson(se) => ProviderError::SerdeJson(se),
+            Eip1193Error::JsonRpcError(ref err) => {
+                ProviderError::JsonRpcClientError(Box::new(self))
+            }
+            _ => ProviderError::CustomError(format!("{:?}", self)),
+        }
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+impl JsonRpcClient for Eip1193 {
+    type Error = Eip1193Error;
+
     /// Sends the request via `window.ethereum` in Js
-    pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
+    async fn request<T: Serialize + Send + Sync + std::fmt::Debug, R: DeserializeOwned + Send>(
         &self,
         method: &str,
         params: T,
@@ -177,7 +214,9 @@ impl Eip1193 {
             Err(e) => Err(e.into()),
         }
     }
+}
 
+impl Eip1193 {
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
         &self,
         data: T,
@@ -191,6 +230,14 @@ impl Eip1193 {
 
         let sig = decode(sig)?;
         Ok(Signature::try_from(sig.as_slice())?)
+    }
+
+    pub async fn chain_id(&self) -> Result<u64, Eip1193Error> {
+        Ok(self.request("eth_chainId", ()).await?)
+    }
+
+    pub async fn request_accounts(&self) -> Result<Vec<Address>, Eip1193Error> {
+        Ok(self.request("eth_requestAccounts", ()).await?)
     }
 
     pub fn is_available() -> bool {
