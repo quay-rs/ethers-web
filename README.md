@@ -12,14 +12,13 @@ You use `ethers-web` to connect providers and then use bare `ethers` to interact
 
 ## Documentation
 
-In progress of creation.
+In progress of creation. For now check `examples` folder for implementation details for both `leptos` and `yew` frameworks
 
 ## Features
 
 - [X] EIP1193 injected wallet implementation
 - [X] WalletConnect
 - [ ] Documentation
-- [ ] Better examples (plus leptos example)
 
 ## Note on WASM
 

@@ -1,12 +1,20 @@
 [package]
 name = "ethers-web"
+description = "WASM library for web injected and walletconnect dApp connections"
 version = "0.1.0"
 edition = "2021"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+homepage = "https://quay.rs/"
+repository = "https://github.com/quay-rs/ethers-web"
 categories = ["cryptography::cryptocurrencies"]
-keywords = ["crypto", "ethers", "ethereum", "web3", "wasm", "walletconnect"]
+keywords = ["crypto", "ethereum", "web3", "wasm", "walletconnect"]
+
+[package.metadata.docs.rs]
+default-target = "wasm32-unknown-unknown"
 
 [dependencies]
-walletconnect-client = { git = "https://github.com/quay-rs/walletconnect-client", rev = "c6e45042c965ee4c0801158e2fd90bc68e772fb8" }
+walletconnect-client = "0.1"
 tokio = { version = "1.35", default-features = false, features = ["sync", "macros"] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 async-trait = "0.1"
