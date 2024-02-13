@@ -2,6 +2,11 @@ pub mod eip1193;
 pub mod explorer;
 pub mod walletconnect;
 
+#[cfg(feature = "leptos")]
+pub mod leptos;
+#[cfg(feature = "yew")]
+pub mod yew;
+
 use async_trait::async_trait;
 use eip1193::{Eip1193, Eip1193Error};
 use ethers::{
@@ -30,6 +35,7 @@ const STATUS_KEY: &str = "ETHERS_WEB_STATE";
 
 use walletconnect::WalletConnectProvider;
 
+/// Ethereum builder for Ethereum object
 pub struct EthereumBuilder {
     pub chain_id: u64,
     pub name: String,
@@ -41,6 +47,7 @@ pub struct EthereumBuilder {
 }
 
 impl EthereumBuilder {
+    /// Simple builder constructor
     pub fn new() -> Self {
         Self {
             chain_id: 1,
@@ -53,41 +60,49 @@ impl EthereumBuilder {
         }
     }
 
+    /// Setting defaults chain id
     pub fn chain_id(&mut self, chain_id: u64) -> &Self {
         self.chain_id = chain_id;
         self
     }
 
+    /// Setting dApp name
     pub fn name(&mut self, name: &str) -> &Self {
         self.name = name.to_string();
         self
     }
 
+    /// Setting dApp description
     pub fn description(&mut self, description: &str) -> &Self {
         self.description = description.to_string();
         self
     }
 
+    /// Setting dApp url
     pub fn url(&mut self, url: &str) -> &Self {
         self.url = url.to_string();
         self
     }
 
+    /// Setting WalletConnects ProjectId
     pub fn walletconnect_id(&mut self, wc_project_id: &str) -> &Self {
         self.wc_project_id = Some(wc_project_id.to_string());
         self
     }
 
+    /// Setting RPC node working together with WalletConnect connection for non-signer interactions
     pub fn rpc_node(&mut self, rpc_node: &str) -> &Self {
         self.rpc_node = Some(rpc_node.to_string());
         self
     }
 
+    /// Setting dApp icon url
     pub fn add_icon(&mut self, icon_url: &str) -> &Self {
         self.icons.push(icon_url.to_string());
         self
     }
 
+    /// Building final Ethereum object
     pub fn build(&self) -> Ethereum {
         Ethereum::new(
             self.chain_id,
@@ -101,12 +116,14 @@ impl EthereumBuilder {
     }
 }
 
+/// Available wallet types
 #[derive(Clone, Debug, Copy)]
 pub enum WalletType {
     Injected,
     WalletConnect,
 }
 
+/// Error struct
 #[derive(Error, Debug)]
 pub enum EthereumError {
     #[error("Wallet unavaibale")]
@@ -180,6 +197,7 @@ impl RpcError for EthereumError {
     }
 }
 
+/// Currently connected provider
 #[derive(Clone)]
 pub enum WebProvider {
     None,
@@ -207,12 +225,14 @@ impl PartialEq for WebProvider {
     }
 }
 
+/// Ethereums State to store or to be restored from
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EthereumState {
     pub chain_id: Option<u64>,
     pub wc_state: Option<WalletConnectState>,
 }
 
+/// Ethereums connection event
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     ConnectionWaiting(String),
@@ -245,6 +265,7 @@ impl From<walletconnect_client::event::Event> for Event {
     }
 }
 
+/// Main wallet connectivity object to maintain connections
 #[derive(Clone)]
 pub struct Ethereum {
     pub metadata: Metadata,
@@ -278,6 +299,7 @@ impl Debug for Ethereum {
 }
 
 impl Ethereum {
+    /// Ethereums constructor
     fn new(
         chain_id: u64,
         name: String,
@@ -301,6 +323,7 @@ impl Ethereum {
         }
     }
 
+    /// Checks if given wallet type is currently avvailable to connect
     pub fn is_available(&self, wallet_type: WalletType) -> bool {
         match wallet_type {
             WalletType::Injected => self.injected_available(),
@@ -308,10 +331,12 @@ impl Ethereum {
         }
     }
 
+    /// Checks if we have a provider connection
     pub fn has_provider(&self) -> bool {
         self.wallet.is_some()
     }
 
+    /// Checks what type of the wallet is currently connected
     pub fn connected_wallet_type(&self) -> Option<WalletType> {
         match &self.wallet {
             WebProvider::None => None,
@@ -320,6 +345,7 @@ impl Ethereum {
         }
     }
 
+    /// Returns available wallets types
     pub fn available_wallets(&self) -> Vec<WalletType> {
         let mut types = Vec::new();
 
@@ -334,14 +360,17 @@ impl Ethereum {
         types
     }
 
+    /// Checkes if injected wallet is available in current context
     pub fn injected_available(&self) -> bool {
         Eip1193::is_available()
     }
 
+    /// Checks if WalletConnect connection is available in current context (configuration)
     pub fn walletconnect_available(&self) -> bool {
         self.wc_project_id.is_some()
     }
 
+    /// Fetching available wallets from WalletConnect explorer
     pub async fn fetch_available_wallets(
         &self,
     ) -> Result<Vec<explorer::WalletDescription>, EthereumError> {
@@ -362,6 +391,7 @@ impl Ethereum {
         }
     }
 
+    /// Performing connection to selected wallet
     pub async fn connect(&mut self, wallet: WalletType) -> Result<(), EthereumError> {
         if self.wallet != WebProvider::None {
             return Err(EthereumError::AlreadyConnected);
@@ -373,6 +403,7 @@ impl Ethereum {
         }
     }
 
+    /// Disconnects from wallet
     pub async fn disconnect(&mut self) {
         if let WebProvider::WalletConnect(wc) = &self.wallet {
             wc.disconnect().await;
@@ -462,6 +493,7 @@ impl Ethereum {
         Ok(())
     }
 
+    /// Getting next available event from the event queue
     pub async fn next(&self) -> Result<Option<Event>, EthereumError> {
         let event = match &self.wallet {
             WebProvider::WalletConnect(provider) => {
@@ -499,6 +531,7 @@ impl Ethereum {
         event
     }
 
+    /// Signs typed data using connected wallet
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
         &self,
         data: T,
@@ -513,6 +546,7 @@ impl Ethereum {
         }
     }
 
+    /// Performs network switch to other chain id
     pub async fn switch_network(&mut self, chain_id: u64) -> Result<(), EthereumError> {
         match self.wallet {
             WebProvider::WalletConnect(ref mut provider) => {
@@ -585,6 +619,7 @@ impl Ethereum {
         }
     }
 
+    /// Restores connection state from local storage
     pub async fn restore(&mut self) -> bool {
         match LocalStorage::get::<EthereumState>(STATUS_KEY) {
             Ok(state) => {

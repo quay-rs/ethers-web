@@ -1,4 +1,4 @@
-use crate::ethereum::UseEthereum;
+use ethers_web::yew::UseEthereum;
 use qrcode_generator::QrCodeEcc;
 use yew::prelude::*;
 

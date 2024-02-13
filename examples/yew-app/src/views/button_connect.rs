@@ -1,5 +1,4 @@
-use crate::ethereum::UseEthereum;
-use ethers_web::WalletType;
+use ethers_web::{yew::UseEthereum, WalletType};
 use yew::prelude::*;
 
 #[function_component(WalletButton)]
@@ -16,7 +15,13 @@ pub fn wallet_button() -> Html {
     };
 
     let label = if ethereum.is_connected() {
-        ethereum.main_account()
+        if let Some(acc) =
+            ethereum.accounts().expect("Missing accounts! It's disconnected!").first()
+        {
+            format!("{acc}")
+        } else {
+            "Account missing".into()
+        }
     } else {
         "Connect wallet".into()
     };

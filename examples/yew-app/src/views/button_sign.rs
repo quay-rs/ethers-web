@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use crate::ethereum::UseEthereum;
 use ethers::types::transaction::eip712::{EIP712Domain, Eip712DomainType, TypedData};
+use ethers_web::yew::UseEthereum;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -11,20 +11,14 @@ const DOCUMENT_SIGNATURE_NAME: &str = "Document Signature";
 const VERIFIER_NAME: &str = "Test App";
 
 fn domain_types() -> Vec<Eip712DomainType> {
-    vec![Eip712DomainType {
-        name: "name".to_string(),
-        r#type: "string".to_string(),
-    }]
+    vec![Eip712DomainType { name: "name".to_string(), r#type: "string".to_string() }]
 }
 
 fn typed_data_for_document(name: &str) -> TypedData {
     let mut types = BTreeMap::new();
 
     types.insert("EIP712Domain".to_string(), domain_types());
-    types.insert(
-        DOCUMENT_SIGNATURE_NAME.to_string(),
-        DocumentDescription::types(),
-    );
+    types.insert(DOCUMENT_SIGNATURE_NAME.to_string(), DocumentDescription::types());
     TypedData {
         domain: EIP712Domain {
             name: Some(VERIFIER_NAME.to_string()),
@@ -48,28 +42,16 @@ pub struct DocumentDescription {
 impl DocumentDescription {
     pub fn types() -> Vec<Eip712DomainType> {
         vec![
-            Eip712DomainType {
-                name: "content".to_string(),
-                r#type: "string".to_string(),
-            },
-            Eip712DomainType {
-                name: "name".to_string(),
-                r#type: "string".to_string(),
-            },
+            Eip712DomainType { name: "content".to_string(), r#type: "string".to_string() },
+            Eip712DomainType { name: "name".to_string(), r#type: "string".to_string() },
         ]
     }
 
     pub fn into_value(&self) -> BTreeMap<String, serde_json::Value> {
         let mut types = BTreeMap::new();
-        types.insert(
-            "content".to_string(),
-            serde_json::Value::String(self.content.clone()),
-        );
+        types.insert("content".to_string(), serde_json::Value::String(self.content.clone()));
 
-        types.insert(
-            "name".to_string(),
-            serde_json::Value::String(self.name.clone()),
-        );
+        types.insert("name".to_string(), serde_json::Value::String(self.name.clone()));
         types
     }
 
@@ -93,16 +75,21 @@ pub fn signature_button() -> Html {
                 let data = typed_data_for_document("Some Document");
                 let ethereum = ethereum.clone();
                 spawn_local(async move {
-                    let signature_res = ethereum
-                        .sign_typed_data(json!(data).to_string(), &ethereum.account())
-                        .await;
-                    // Checking signature
-                    let address = ethereum.account();
-                    if let Ok(signature_res) = signature_res {
-                        let recover_address = signature_res.recover_typed_data(&data).unwrap();
-                        info!("Signing with {:?} recovered {:?}", address, recover_address);
+                    if let Some(address) =
+                        ethereum.accounts().expect("Missing accounts! It's disconnected!").first()
+                    {
+                        let signature_res =
+                            ethereum.sign_typed_data(json!(data).to_string(), address).await;
+
+                        // Checking signature
+                        if let Ok(signature_res) = signature_res {
+                            let recover_address = signature_res.recover_typed_data(&data).unwrap();
+                            info!("Signing with {:?} recovered {:?}", address, recover_address);
+                        } else {
+                            error!("Signature failed");
+                        }
                     } else {
-                        error!("Signature failed");
+                        error!("Missing account");
                     }
                 });
             } else {

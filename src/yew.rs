@@ -1,12 +1,36 @@
+use crate::{Ethereum, EthereumBuilder, EthereumError, Event, WalletType};
 use ethers::{
     providers::Provider,
     types::{Address, Signature},
 };
-use ethers_web::{Ethereum, EthereumBuilder, EthereumError, Event, WalletType};
 use log::{debug, error};
 use serde::Serialize;
-use yew::{platform::spawn_local, prelude::*};
+use yew::{
+    function_component, html, platform::spawn_local, prelude::*, Children, ContextProvider, Html,
+    Properties,
+};
 
+#[derive(Clone, PartialEq)]
+pub struct EthereumProviderState {
+    pub ethereum: UseEthereum,
+}
+
+#[derive(Properties, PartialEq)]
+pub struct Props {
+    #[prop_or_default]
+    pub children: Children,
+}
+
+#[function_component(EthereumContextProvider)]
+pub fn ethereum_context_provider(props: &Props) -> Html {
+    let ethereum = use_ethereum();
+
+    html! {
+        <ContextProvider<UseEthereum> context={ethereum}>
+            {for props.children.iter()}
+        </ContextProvider<UseEthereum>>
+    }
+}
 #[derive(Clone, Debug)]
 pub struct UseEthereum {
     pub ethereum: UseStateHandle<Ethereum>,
@@ -26,6 +50,7 @@ impl PartialEq for UseEthereum {
 }
 
 impl UseEthereum {
+    /// Connect to the wallet (defined by type)
     pub fn connect(&mut self, wallet_type: WalletType) {
         // We check if it is possible to connect
         let mut this = self.clone();
@@ -42,11 +67,14 @@ impl UseEthereum {
         }
     }
 
+    /// Gets a provider you can feed to ethers constructors to start interaction with wallet and
+    /// the network
     pub fn provider(&self) -> Provider<Ethereum> {
         let eth = (*self.ethereum).clone();
         Provider::<Ethereum>::new(eth)
     }
 
+    /// Disconnect from wallet
     pub fn disconnect(&mut self) {
         if self.is_connected() {
             let mut eth = (*self.ethereum).clone();
@@ -58,30 +86,32 @@ impl UseEthereum {
         }
     }
 
+    /// Checks if any wallet is currently connected
     pub fn is_connected(&self) -> bool {
         *self.connected
     }
 
+    /// Checks if injected wallet is available in current context
     pub fn injected_available(&self) -> bool {
         (*self.ethereum).injected_available()
     }
 
+    /// Checks if wallet connect is available in current configuration
     pub fn walletconnect_available(&self) -> bool {
         (*self.ethereum).walletconnect_available()
     }
 
+    /// Gets current chain id of connected wallet
     pub fn chain_id(&self) -> u64 {
         (*self.chain_id).unwrap_or(0)
     }
 
-    pub fn account(&self) -> Address {
-        *self.accounts.as_ref().and_then(|a| a.first()).unwrap_or(&Address::zero())
+    /// Gets a list of all accounts from connected wallet for chosen (and set) network
+    pub fn accounts(&self) -> Option<&Vec<Address>> {
+        (*self.accounts).as_ref()
     }
 
-    pub fn main_account(&self) -> String {
-        self.accounts.as_ref().and_then(|a| a.first()).unwrap_or(&Address::zero()).to_string()
-    }
-
+    /// Signs typed data with the wallet
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
         &self,
         data: T,
@@ -134,6 +164,7 @@ pub fn use_ethereum() -> UseEthereum {
                                 con.set(false);
                                 keep_looping = false;
                             }
+                            Event::Broken => {}
                             Event::ChainIdChanged(chain_id) => cid.set(chain_id),
                             Event::AccountsChanged(accounts) => acc.set(accounts),
                         },

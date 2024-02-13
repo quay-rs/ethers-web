@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 ethers = "2.0"
-ethers-web = { path = "../../" }
+ethers-web = { path = "../../", features = ["yew"] }
 yew = { version = "0.21", features = ["csr"] }
 yew-hooks = "0.3"
 qrcode-generator = "4.1"

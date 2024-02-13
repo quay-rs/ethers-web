@@ -1,12 +1,10 @@
 use console_log;
+use ethers_web::yew::EthereumContextProvider;
 use log::Level;
 use yew::prelude::*;
-use yew_app::{
-    provider::EthereumContextProvider,
-    views::{
-        button_connect::WalletButton, button_erc20::TransferButton, button_sign::SignatureButton,
-        code_view::CodeView,
-    },
+use yew_app::views::{
+    button_connect::WalletButton, button_erc20::TransferButton, button_sign::SignatureButton,
+    code_view::CodeView,
 };
 
 #[function_component]
