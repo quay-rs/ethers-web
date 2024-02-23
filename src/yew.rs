@@ -145,7 +145,6 @@ pub fn use_ethereum() -> UseEthereum {
 
     use_effect_with(ethereum.clone(), move |ethereum| {
         if ethereum.has_provider() {
-            debug!("Start running");
             let eth = ethereum.clone();
             spawn_local(async move {
                 let mut keep_looping = true;
@@ -153,7 +152,6 @@ pub fn use_ethereum() -> UseEthereum {
                     match eth.next().await {
                         Ok(Some(event)) => match event {
                             Event::ConnectionWaiting(url) => {
-                                debug!("{url}");
                                 purl.set(Some(url));
                             }
                             Event::Connected => {
@@ -162,9 +160,11 @@ pub fn use_ethereum() -> UseEthereum {
                             }
                             Event::Disconnected => {
                                 con.set(false);
+                                acc.set(None);
+                                cid.set(None);
                                 keep_looping = false;
                             }
-                            Event::Broken => {}
+                            Event::Broken => { /* we swallow this event and waiting for restart */ }
                             Event::ChainIdChanged(chain_id) => cid.set(chain_id),
                             Event::AccountsChanged(accounts) => acc.set(accounts),
                         },

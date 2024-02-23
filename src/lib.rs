@@ -411,10 +411,7 @@ impl Ethereum {
 
         self.wallet = WebProvider::None;
         self.accounts = None;
-        self.chain_id = None;
 
-        _ = self.sender.send(Event::ChainIdChanged(None)).await;
-        _ = self.sender.send(Event::AccountsChanged(None)).await;
         _ = self.sender.send(Event::Disconnected).await;
     }
 
