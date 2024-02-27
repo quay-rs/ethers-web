@@ -168,32 +168,30 @@ impl From<EthereumError> for ProviderError {
 
 impl RpcError for EthereumError {
     fn as_serde_error(&self) -> Option<&serde_json::Error> {
-        None
+        match self {
+            EthereumError::Eip1193Error(e) => e.as_serde_error(),
+            // EthereumError::ProviderError(e) => e.as_serde_error(),
+            EthereumError::WalletConnectError(e) => e.as_serde_error(),
+            EthereumError::WalletConnectClientError(e) => e.as_serde_error(),
+            _ => None,
+        }
     }
 
     fn is_serde_error(&self) -> bool {
-        false
+        self.as_error_response().is_some()
     }
 
     fn as_error_response(&self) -> Option<&JsonRpcError> {
         match self {
-            EthereumError::Eip1193Error(e) => match e {
-                Eip1193Error::JsonRpcError(e) => Some(e),
-                _ => None,
-            },
+            EthereumError::Eip1193Error(e) => e.as_error_response(),
             EthereumError::WalletConnectError(e) => e.as_error_response(),
+            EthereumError::WalletConnectClientError(e) => e.as_error_response(),
             _ => None,
         }
     }
 
     fn is_error_response(&self) -> bool {
-        match self {
-            EthereumError::Eip1193Error(e) => match e {
-                Eip1193Error::JsonRpcError(_) => true,
-                _ => false,
-            },
-            _ => false,
-        }
+        self.as_error_response().is_some()
     }
 }
 

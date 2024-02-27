@@ -1,5 +1,5 @@
 use ethers::{
-    providers::JsonRpcError,
+    providers::{JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError},
     utils::{
         hex::{decode, FromHexError},
@@ -76,6 +76,36 @@ pub enum Eip1193Error {
 
     #[error(transparent)]
     HexError(#[from] FromHexError),
+}
+
+impl RpcError for Eip1193Error {
+    fn as_serde_error(&self) -> Option<&serde_json::Error> {
+        match self {
+            Eip1193Error::SerdeJson(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    fn is_serde_error(&self) -> bool {
+        self.as_serde_error().is_some()
+    }
+
+    fn as_error_response(&self) -> Option<&JsonRpcError> {
+        match self {
+            Eip1193Error::JsonRpcError(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    fn is_error_response(&self) -> bool {
+        self.as_error_response().is_some()
+    }
+}
+
+impl From<Eip1193Error> for ProviderError {
+    fn from(src: Eip1193Error) -> Self {
+        ProviderError::JsonRpcClientError(Box::new(src))
+    }
 }
 
 #[wasm_bindgen(inline_js = "export function get_provider_js() {return window.ethereum}")]

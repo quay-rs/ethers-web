@@ -1,5 +1,5 @@
 use ethers::{
-    providers::{Http, HttpClientError, JsonRpcClient, JsonRpcError},
+    providers::{Http, HttpClientError, JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError},
     utils::{hex::decode, serialize},
 };
@@ -36,12 +36,36 @@ pub enum Error {
     HexError(#[from] FromHexError),
 }
 
-impl Error {
-    pub fn as_error_response(&self) -> Option<&JsonRpcError> {
+impl RpcError for Error {
+    fn as_serde_error(&self) -> Option<&serde_json::Error> {
         match self {
-            Error::WalletConnectError(e) => e.as_error_respose(),
+            Error::WalletConnectError(e) => e.as_serde_error(),
+            Error::HttpClientError(e) => e.as_serde_error(),
+            Error::SerdeJsonError(e) => Some(e),
             _ => None,
         }
+    }
+
+    fn is_serde_error(&self) -> bool {
+        self.as_serde_error().is_some()
+    }
+
+    fn as_error_response(&self) -> Option<&JsonRpcError> {
+        match self {
+            Error::WalletConnectError(e) => e.as_error_response(),
+            Error::HttpClientError(e) => e.as_error_response(),
+            _ => None,
+        }
+    }
+
+    fn is_error_response(&self) -> bool {
+        self.as_error_response().is_some()
+    }
+}
+
+impl From<Error> for ProviderError {
+    fn from(src: Error) -> Self {
+        ProviderError::JsonRpcClientError(Box::new(src))
     }
 }
 
