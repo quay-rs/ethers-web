@@ -162,41 +162,46 @@ impl Eip1193 {
         let typename_object = JsValue::from_str("type");
 
         let parsed_params = if !t_params.is_null() {
-            js_sys::Array::from(&t_params).map(&mut |val, _, _| {
-                if let Some(trans) = js_sys::Object::try_from(&val) {
-                    if let Ok(obj_type) = js_sys::Reflect::get(trans, &typename_object) {
-                        if let Some(type_string) = obj_type.as_string() {
-                            let t_copy = trans.clone();
-                            _ = match type_string.as_str() {
-                                "0x01" => js_sys::Reflect::set(
-                                    &t_copy,
-                                    &typename_object,
-                                    &JsValue::from_str("0x1"),
-                                ),
-                                "0x02" => js_sys::Reflect::set(
-                                    &t_copy,
-                                    &typename_object,
-                                    &JsValue::from_str("0x2"),
-                                ),
-                                "0x03" => js_sys::Reflect::set(
-                                    &t_copy,
-                                    &typename_object,
-                                    &JsValue::from_str("0x3"),
-                                ),
-                                _ => Ok(true),
-                            };
-                            return t_copy.into();
+            if method != "wallet_watchAsset" {
+                js_sys::Array::from(&t_params).map(&mut |val, _, _| {
+                    if let Some(trans) = js_sys::Object::try_from(&val) {
+                        if let Ok(obj_type) = js_sys::Reflect::get(trans, &typename_object) {
+                            if let Some(type_string) = obj_type.as_string() {
+                                let t_copy = trans.clone();
+                                _ = match type_string.as_str() {
+                                    "0x01" => js_sys::Reflect::set(
+                                        &t_copy,
+                                        &typename_object,
+                                        &JsValue::from_str("0x1"),
+                                    ),
+                                    "0x02" => js_sys::Reflect::set(
+                                        &t_copy,
+                                        &typename_object,
+                                        &JsValue::from_str("0x2"),
+                                    ),
+                                    "0x03" => js_sys::Reflect::set(
+                                        &t_copy,
+                                        &typename_object,
+                                        &JsValue::from_str("0x3"),
+                                    ),
+                                    _ => Ok(true),
+                                };
+                                return t_copy.into();
+                            }
                         }
                     }
-                }
 
-                val
-            })
+                    val
+                }).into()
+            } else {
+                t_params.clone()
+            }
         } else {
-            js_sys::Array::new()
+            js_sys::Array::new().into()
         };
 
-        let payload = Eip1193Request::new(method.to_string(), parsed_params.into());
+        info!("Parsed params: {:?} - {:?}", parsed_params, t_params);
+        let payload = Eip1193Request::new(method.to_string(), parsed_params);
 
         debug!("Sending request: {:?}", payload);
         match ethereum.request(payload).await {
