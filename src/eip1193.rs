@@ -137,7 +137,7 @@ extern "C" {
 }
 
 impl Ethereum {
-    pub fn default() -> Result<Self, Eip1193Error> {
+    pub fn default_opt() -> Result<Self, Eip1193Error> {
         if let Ok(Some(eth)) = get_provider_js() {
             Ok(eth)
         } else {
@@ -173,7 +173,7 @@ impl JsonRpcClient for Eip1193 {
 
         let parsed_params = parse_params(params, &m).unwrap_or_default();
         spawn_local(async move {
-            if let Ok(ethereum) = Ethereum::default() {
+            if let Ok(ethereum) = Ethereum::default_opt() {
                 let payload = Eip1193Request::new(m, parsed_params);
 
                 let response = ethereum.request(payload).await;
@@ -218,7 +218,7 @@ impl Eip1193 {
     }
 
     pub fn is_available() -> bool {
-        Ethereum::default().is_ok()
+        Ethereum::default_opt().is_ok()
     }
 
     pub fn new() -> Self {
@@ -226,7 +226,7 @@ impl Eip1193 {
     }
 
     pub fn on(self, event: &str, callback: Box<dyn FnMut(JsValue)>) -> Result<(), Eip1193Error> {
-        let ethereum = Ethereum::default()?;
+        let ethereum = Ethereum::default_opt()?;
         let closure = Closure::wrap(callback);
         ethereum.on(event, &closure);
         closure.forget();

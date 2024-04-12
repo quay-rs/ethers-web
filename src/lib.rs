@@ -211,21 +211,18 @@ pub enum WebProvider {
 
 impl WebProvider {
     fn is_some(&self) -> bool {
-        match self {
-            Self::None => false,
-            _ => true,
-        }
+        !matches!(self, Self::None)
     }
 }
 
 impl PartialEq for WebProvider {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
+        matches!(
+            (self, other),
             (Self::None, Self::None)
-            | (Self::Injected(_), Self::Injected(_))
-            | (Self::WalletConnect(_), Self::WalletConnect(_)) => true,
-            _ => false,
-        }
+                | (Self::Injected(_), Self::Injected(_))
+                | (Self::WalletConnect(_), Self::WalletConnect(_))
+        )
     }
 }
 
@@ -249,13 +246,13 @@ pub enum Event {
 
 impl Event {
     fn is_connection_established(&self) -> bool {
-        match self {
+        !matches!(
+            self,
             Self::ConnectionWaiting(_)
-            | Self::Disconnected
-            | Self::ChainIdChanged(None)
-            | Self::AccountsChanged(None) => false,
-            _ => true,
-        }
+                | Self::Disconnected
+                | Self::ChainIdChanged(None)
+                | Self::AccountsChanged(None)
+        )
     }
 }
 
@@ -473,7 +470,7 @@ impl Ethereum {
                                     })
                                     .await;
                             }
-                            None => _ = sender.send(Event::Disconnected),
+                            None => _ = sender.send(Event::Disconnected).await,
                         }
                     });
                 }),
@@ -508,18 +505,11 @@ impl Ethereum {
         };
 
         if let Ok(Some(e)) = &event {
-            match e {
-                Event::Connected => match &self.wallet {
-                    WebProvider::WalletConnect(provider) => {
-                        _ = self
-                            .sender
-                            .send(Event::ChainIdChanged(Some(provider.chain_id())))
-                            .await;
-                        _ = self.sender.send(Event::AccountsChanged(provider.accounts())).await;
-                    }
-                    _ => {}
-                },
-                _ => {}
+            if e == &Event::Connected {
+                if let WebProvider::WalletConnect(provider) = &self.wallet {
+                    _ = self.sender.send(Event::ChainIdChanged(Some(provider.chain_id()))).await;
+                    _ = self.sender.send(Event::AccountsChanged(provider.accounts())).await;
+                }
             }
 
             if !e.is_connection_established() {
@@ -581,7 +571,11 @@ impl Ethereum {
         )?;
 
         let url = wc
-            .initiate_session(state.as_ref().map(|s| s.keys.clone().into_iter().map(|(t, _)| t).collect::<Vec<_>>()))
+            .initiate_session(
+                state
+                    .as_ref()
+                    .map(|s| s.keys.clone().into_iter().map(|(t, _)| t).collect::<Vec<_>>()),
+            )
             .await?;
 
         self.wallet =
@@ -644,7 +638,7 @@ impl Ethereum {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(target_arch = "wasm32", async_trait(? Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl JsonRpcClient for Ethereum {
     type Error = EthereumError;

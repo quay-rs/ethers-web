@@ -12,7 +12,7 @@ pub struct ExplorerResponse {
 impl ExplorerResponse {
     pub fn parse_wallets(&self, project_id: &str) -> Vec<WalletDescription> {
         let mut wallets: Vec<WalletDescription> = Vec::new();
-        for (_, wallet) in &self.listings {
+        for wallet in self.listings.values() {
             if let Ok(mut w) = TryInto::<WalletDescription>::try_into(wallet) {
                 w.project_id = project_id.to_string();
                 wallets.push(w)
