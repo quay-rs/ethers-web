@@ -85,17 +85,6 @@ pub enum Eip1193Error {
 }
 
 impl RpcError for Eip1193Error {
-    fn as_serde_error(&self) -> Option<&serde_json::Error> {
-        match self {
-            Eip1193Error::SerdeJson(e) => Some(e),
-            _ => None,
-        }
-    }
-
-    fn is_serde_error(&self) -> bool {
-        self.as_serde_error().is_some()
-    }
-
     fn as_error_response(&self) -> Option<&JsonRpcError> {
         match self {
             Eip1193Error::JsonRpcError(e) => Some(e),
@@ -105,6 +94,17 @@ impl RpcError for Eip1193Error {
 
     fn is_error_response(&self) -> bool {
         self.as_error_response().is_some()
+    }
+
+    fn as_serde_error(&self) -> Option<&serde_json::Error> {
+        match self {
+            Eip1193Error::SerdeJson(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    fn is_serde_error(&self) -> bool {
+        self.as_serde_error().is_some()
     }
 }
 
@@ -138,11 +138,11 @@ extern "C" {
 
 impl Ethereum {
     pub fn default() -> Result<Self, Eip1193Error> {
-        if let Ok(Some(eth)) = get_provider_js() {
-            return Ok(eth);
+        return if let Ok(Some(eth)) = get_provider_js() {
+            Ok(eth)
         } else {
-            return Err(Eip1193Error::JsNoEthereum);
-        }
+            Err(Eip1193Error::JsNoEthereum)
+        };
     }
 }
 
@@ -155,7 +155,8 @@ impl From<JsValue> for Eip1193Error {
         }
     }
 }
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+
+#[cfg_attr(target_arch = "wasm32", async_trait(? Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl JsonRpcClient for Eip1193 {
     type Error = Eip1193Error;
@@ -170,10 +171,10 @@ impl JsonRpcClient for Eip1193 {
 
         let m = method.to_string();
 
-        let parsed_params = parse_params(params).unwrap_or(js_sys::Array::new());
+        let parsed_params = parse_params(params, &m).unwrap_or(JsValue::default());
         spawn_local(async move {
             if let Ok(ethereum) = Ethereum::default() {
-                let payload = Eip1193Request::new(m, parsed_params.into());
+                let payload = Eip1193Request::new(m, parsed_params);
 
                 let response = ethereum.request(payload).await;
                 let res = match response {
@@ -227,42 +228,57 @@ impl Eip1193 {
     }
 }
 
-fn parse_params<T: Serialize + Send + Sync>(params: T) -> Result<js_sys::Array, Eip1193Error> {
+const METAMASK_METHOD_WITH_WRONG_IMPLEMENTATION_SIGNATURE: &str = "wallet_watchAsset";
+
+fn parse_params<T: Serialize + Send + Sync>(
+    params: T,
+    method: &String,
+) -> Result<JsValue, Eip1193Error> {
     let t_params = JsValue::from_serde(&params)?;
     let typename_object = JsValue::from_str("type");
 
     Ok(if !t_params.is_null() {
-        js_sys::Array::from(&t_params).map(&mut |val, _, _| {
-            if let Some(trans) = js_sys::Object::try_from(&val) {
-                if let Ok(obj_type) = js_sys::Reflect::get(trans, &typename_object) {
-                    if let Some(type_string) = obj_type.as_string() {
-                        let t_copy = trans.clone();
-                        _ = match type_string.as_str() {
-                            "0x01" => js_sys::Reflect::set(
-                                &t_copy,
-                                &typename_object,
-                                &JsValue::from_str("0x1"),
-                            ),
-                            "0x02" => js_sys::Reflect::set(
-                                &t_copy,
-                                &typename_object,
-                                &JsValue::from_str("0x2"),
-                            ),
-                            "0x03" => js_sys::Reflect::set(
-                                &t_copy,
-                                &typename_object,
-                                &JsValue::from_str("0x3"),
-                            ),
-                            _ => Ok(true),
-                        };
-                        return t_copy.into();
+        // NOTE: Metamask experimental method with different options signature then rest of code
+        // source: https://docs.metamask.io/wallet/reference/wallet_watchasset/
+        if method != METAMASK_METHOD_WITH_WRONG_IMPLEMENTATION_SIGNATURE {
+            js_sys::Array::from(&t_params)
+                .map(&mut |val, _, _| {
+                    if let Some(trans) = js_sys::Object::try_from(&val) {
+                        if let Ok(obj_type) = js_sys::Reflect::get(trans, &typename_object) {
+                            if let Some(type_string) = obj_type.as_string() {
+                                let t_copy = trans.clone();
+                                _ = match type_string.as_str() {
+                                    "0x01" => js_sys::Reflect::set(
+                                        &t_copy,
+                                        &typename_object,
+                                        &JsValue::from_str("0x1"),
+                                    ),
+                                    "0x02" => js_sys::Reflect::set(
+                                        &t_copy,
+                                        &typename_object,
+                                        &JsValue::from_str("0x2"),
+                                    ),
+                                    "0x03" => js_sys::Reflect::set(
+                                        &t_copy,
+                                        &typename_object,
+                                        &JsValue::from_str("0x3"),
+                                    ),
+                                    _ => Ok(true),
+                                };
+                                return t_copy.into();
+                            }
+                        }
                     }
-                }
-            }
 
-            val
-        })
+                    val
+                })
+                .into()
+        } else {
+            // NOTE: Yes, MM requires a different implementation for options for one method
+            // source: https://docs.metamask.io/wallet/reference/wallet_watchasset/
+            t_params
+        }
     } else {
-        js_sys::Array::new()
+        js_sys::Array::new().into()
     })
 }
