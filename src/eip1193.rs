@@ -138,11 +138,11 @@ extern "C" {
 
 impl Ethereum {
     pub fn default() -> Result<Self, Eip1193Error> {
-        return if let Ok(Some(eth)) = get_provider_js() {
+        if let Ok(Some(eth)) = get_provider_js() {
             Ok(eth)
         } else {
             Err(Eip1193Error::JsNoEthereum)
-        };
+        }
     }
 }
 
