@@ -171,7 +171,7 @@ impl JsonRpcClient for Eip1193 {
 
         let m = method.to_string();
 
-        let parsed_params = parse_params(params, &m).unwrap_or(JsValue::default());
+        let parsed_params = parse_params(params, &m).unwrap_or_default();
         spawn_local(async move {
             if let Ok(ethereum) = Ethereum::default() {
                 let payload = Eip1193Request::new(m, parsed_params);
@@ -192,6 +192,12 @@ impl JsonRpcClient for Eip1193 {
 
         let res = receiver.await.map_err(|_| Eip1193Error::CommsError)?;
         Ok(serde_json::from_str(&res?)?)
+    }
+}
+
+impl Default for Eip1193 {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -46,6 +46,12 @@ pub struct EthereumBuilder {
     pub rpc_node: Option<String>,
 }
 
+impl Default for EthereumBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EthereumBuilder {
     /// Simple builder constructor
     pub fn new() -> Self {
@@ -384,7 +390,7 @@ impl Ethereum {
                     .await?
                     .json()
                     .await?;
-                Ok(resp.parse_wallets(&p_id))
+                Ok(resp.parse_wallets(p_id))
             }
         }
     }
@@ -495,7 +501,7 @@ impl Ethereum {
                 let mut recvr = self.receiver.lock().await;
                 tokio::select! {
                     e = recvr.recv() => Ok(e),
-                    e = provider.next() => Ok(match e? { Some(e) => Some(e.into()), None => None })
+                    e = provider.next() => Ok(e?.map(|e| e.into()))
                 }
             }
             _ => Ok(self.receiver.lock().await.recv().await),
@@ -517,7 +523,7 @@ impl Ethereum {
             }
 
             if !e.is_connection_established() {
-                _ = LocalStorage::delete(STATUS_KEY)
+                LocalStorage::delete(STATUS_KEY);
             } else {
                 _ = LocalStorage::set(STATUS_KEY, self.collect_state());
             }
@@ -547,7 +553,7 @@ impl Ethereum {
             WebProvider::WalletConnect(ref mut provider) => {
                 // We need to check if we've got any accounts under that id
                 if let Some(accounts) = provider.accounts_for_chain(chain_id) {
-                    if accounts.len() > 0 {
+                    if !accounts.is_empty() {
                         self.accounts = Some(accounts.clone());
                         self.chain_id = Some(chain_id);
                         provider.set_chain_id(chain_id);
@@ -569,22 +575,19 @@ impl Ethereum {
 
         let wc = WalletConnect::connect(
             self.wc_project_id.clone().unwrap().into(),
-            self.chain_id.unwrap_or_else(|| 1),
+            self.chain_id.unwrap_or(1),
             self.metadata.clone(),
             state.clone(),
         )?;
 
         let url = wc
-            .initiate_session(match state {
-                None => None,
-                Some(ref s) => Some(s.keys.clone().into_iter().map(|(t, _)| t).collect::<Vec<_>>()),
-            })
+            .initiate_session(state.as_ref().map(|s| s.keys.clone().into_iter().map(|(t, _)| t).collect::<Vec<_>>()))
             .await?;
 
         self.wallet =
             WebProvider::WalletConnect(WalletConnectProvider::new(wc, self.rpc_node.clone()));
 
-        if url.len() > 0 {
+        if !url.is_empty() {
             _ = self.sender.send(Event::ConnectionWaiting(url)).await;
         } else {
             _ = self.sender.send(Event::Connected).await;

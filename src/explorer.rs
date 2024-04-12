@@ -56,7 +56,7 @@ impl TryInto<WalletDescription> for &WalletData {
             None => None,
             Some(l) => match &l.native {
                 Some(url) => {
-                    if url.len() > 0 {
+                    if !url.is_empty() {
                         Some(url.clone())
                     } else {
                         None
@@ -69,7 +69,7 @@ impl TryInto<WalletDescription> for &WalletData {
             None => None,
             Some(l) => match &l.native {
                 Some(url) => {
-                    if url.len() > 0 {
+                    if !url.is_empty() {
                         Some(url.clone())
                     } else {
                         None

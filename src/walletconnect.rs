@@ -110,12 +110,10 @@ impl JsonRpcClient for WalletConnectProvider {
             let res = receiver.await.map_err(|_| Error::CommsError)??;
 
             Ok(from_value(res)?)
+        } else if let Some(provider) = &self.provider {
+            Ok(provider.request(method, params).await?)
         } else {
-            if let Some(provider) = &self.provider {
-                Ok(provider.request(method, params).await?)
-            } else {
-                Err(Error::MissingProvider)
-            }
+            Err(Error::MissingProvider)
         }
     }
 }
