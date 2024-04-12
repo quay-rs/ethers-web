@@ -1,15 +1,19 @@
+use async_trait::async_trait;
 use ethers::{
-    providers::{JsonRpcError, ProviderError, RpcError},
+    providers::{JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError},
     utils::{
         hex::{decode, FromHexError},
         serialize, ConversionError,
     },
 };
+use futures::channel::oneshot;
 use gloo_utils::format::JsValueSerdeExt;
+use log::error;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 use wasm_bindgen::{closure::Closure, prelude::*, JsValue};
+use wasm_bindgen_futures::spawn_local;
 
 #[wasm_bindgen]
 #[derive(Debug)]
@@ -75,6 +79,9 @@ pub enum Eip1193Error {
 
     #[error(transparent)]
     HexError(#[from] FromHexError),
+
+    #[error("Communication error")]
+    CommsError,
 }
 
 impl RpcError for Eip1193Error {
@@ -148,68 +155,46 @@ impl From<JsValue> for Eip1193Error {
         }
     }
 }
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+impl JsonRpcClient for Eip1193 {
+    type Error = Eip1193Error;
 
-impl Eip1193 {
     /// Sends the request via `window.ethereum` in Js
-    pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
+    async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
         &self,
         method: &str,
         params: T,
-    ) -> Result<R, Eip1193Error> {
-        let ethereum = Ethereum::default()?;
-        let t_params = JsValue::from_serde(&params)?;
-        let typename_object = JsValue::from_str("type");
+    ) -> Result<R, Self::Error> {
+        let (sender, receiver) = oneshot::channel();
 
-        let parsed_params = if !t_params.is_null() {
-            if method != "wallet_watchAsset" {
-                js_sys::Array::from(&t_params).map(&mut |val, _, _| {
-                    if let Some(trans) = js_sys::Object::try_from(&val) {
-                        if let Ok(obj_type) = js_sys::Reflect::get(trans, &typename_object) {
-                            if let Some(type_string) = obj_type.as_string() {
-                                let t_copy = trans.clone();
-                                _ = match type_string.as_str() {
-                                    "0x01" => js_sys::Reflect::set(
-                                        &t_copy,
-                                        &typename_object,
-                                        &JsValue::from_str("0x1"),
-                                    ),
-                                    "0x02" => js_sys::Reflect::set(
-                                        &t_copy,
-                                        &typename_object,
-                                        &JsValue::from_str("0x2"),
-                                    ),
-                                    "0x03" => js_sys::Reflect::set(
-                                        &t_copy,
-                                        &typename_object,
-                                        &JsValue::from_str("0x3"),
-                                    ),
-                                    _ => Ok(true),
-                                };
-                                return t_copy.into();
-                            }
-                        }
-                    }
+        let m = method.to_string();
 
-                    val
-                }).into()
+        let parsed_params = parse_params(params).unwrap_or(js_sys::Array::new());
+        spawn_local(async move {
+            if let Ok(ethereum) = Ethereum::default() {
+                let payload = Eip1193Request::new(m, parsed_params.into());
+
+                let response = ethereum.request(payload).await;
+                let res = match response {
+                    Ok(r) => match js_sys::JSON::stringify(&r) {
+                        Ok(r) => Ok(r.as_string().unwrap()),
+                        Err(err) => Err(err.into()),
+                    },
+                    Err(e) => Err(e.into()),
+                };
+                _ = sender.send(res);
             } else {
-                t_params.clone()
+                _ = sender.send(Err(Eip1193Error::JsNoEthereum));
             }
-        } else {
-            js_sys::Array::new().into()
-        };
+        });
 
-        let payload = Eip1193Request::new(method.to_string(), parsed_params);
-
-        match ethereum.request(payload).await {
-            Ok(r) => match r.into_serde() {
-                Ok(r) => Ok(r),
-                Err(err) => Err(err.into()),
-            },
-            Err(e) => Err(e.into()),
-        }
+        let res = receiver.await.map_err(|_| Eip1193Error::CommsError)?;
+        Ok(serde_json::from_str(&res?)?)
     }
+}
 
+impl Eip1193 {
     pub async fn sign_typed_data<T: Send + Sync + Serialize>(
         &self,
         data: T,
@@ -240,4 +225,44 @@ impl Eip1193 {
         closure.forget();
         Ok(())
     }
+}
+
+fn parse_params<T: Serialize + Send + Sync>(params: T) -> Result<js_sys::Array, Eip1193Error> {
+    let t_params = JsValue::from_serde(&params)?;
+    let typename_object = JsValue::from_str("type");
+
+    Ok(if !t_params.is_null() {
+        js_sys::Array::from(&t_params).map(&mut |val, _, _| {
+            if let Some(trans) = js_sys::Object::try_from(&val) {
+                if let Ok(obj_type) = js_sys::Reflect::get(trans, &typename_object) {
+                    if let Some(type_string) = obj_type.as_string() {
+                        let t_copy = trans.clone();
+                        _ = match type_string.as_str() {
+                            "0x01" => js_sys::Reflect::set(
+                                &t_copy,
+                                &typename_object,
+                                &JsValue::from_str("0x1"),
+                            ),
+                            "0x02" => js_sys::Reflect::set(
+                                &t_copy,
+                                &typename_object,
+                                &JsValue::from_str("0x2"),
+                            ),
+                            "0x03" => js_sys::Reflect::set(
+                                &t_copy,
+                                &typename_object,
+                                &JsValue::from_str("0x3"),
+                            ),
+                            _ => Ok(true),
+                        };
+                        return t_copy.into();
+                    }
+                }
+            }
+
+            val
+        })
+    } else {
+        js_sys::Array::new()
+    })
 }

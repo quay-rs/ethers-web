@@ -1,8 +1,10 @@
+use async_trait::async_trait;
 use ethers::{
     providers::{Http, HttpClientError, JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError},
     utils::{hex::decode, serialize},
 };
+use futures::channel::oneshot;
 use hex::FromHexError;
 use log::error;
 use serde::{de::DeserializeOwned, Serialize};
@@ -14,6 +16,7 @@ use std::{
 use thiserror::Error;
 use unsafe_send_sync::UnsafeSendSync;
 use walletconnect_client::{prelude::*, WalletConnectState};
+use wasm_bindgen_futures::spawn_local;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -34,6 +37,9 @@ pub enum Error {
 
     #[error(transparent)]
     HexError(#[from] FromHexError),
+
+    #[error("Communication error")]
+    CommsError,
 }
 
 impl RpcError for Error {
@@ -78,6 +84,39 @@ pub struct WalletConnectProvider {
 impl Debug for WalletConnectProvider {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "Wallet Connect signer {:?} chain id: {}", self.address(), self.chain_id())
+    }
+}
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+impl JsonRpcClient for WalletConnectProvider {
+    type Error = Error;
+
+    async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
+        &self,
+        method: &str,
+        params: T,
+    ) -> Result<R, Error> {
+        let params = json!(params);
+
+        let chain_id = self.client.chain_id();
+
+        if self.client.supports_method(method) {
+            let (sender, receiver) = oneshot::channel();
+            let m = method.to_string();
+            let client = self.client.clone();
+            spawn_local(async move {
+                _ = sender.send(client.request(&m, Some(params), chain_id).await)
+            });
+            let res = receiver.await.map_err(|_| Error::CommsError)??;
+
+            Ok(from_value(res)?)
+        } else {
+            if let Some(provider) = &self.provider {
+                Ok(provider.request(method, params).await?)
+            } else {
+                Err(Error::MissingProvider)
+            }
+        }
     }
 }
 
@@ -134,27 +173,6 @@ impl WalletConnectProvider {
         &self,
     ) -> Result<Option<walletconnect_client::event::Event>, walletconnect_client::Error> {
         self.client.next().await
-    }
-
-    /// Sends request via WalletConnectClient
-    pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
-        &self,
-        method: &str,
-        params: T,
-    ) -> Result<R, Error> {
-        let params = json!(params);
-
-        let chain_id = self.client.chain_id();
-
-        if self.client.supports_method(method) {
-            Ok(from_value(self.client.request(method, Some(params), chain_id).await?)?)
-        } else {
-            if let Some(provider) = &self.provider {
-                Ok(provider.request(method, params).await?)
-            } else {
-                Err(Error::MissingProvider)
-            }
-        }
     }
 
     /// Builds typed data Json structure to send it to WalletConnect and sends via client's channel

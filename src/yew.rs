@@ -42,7 +42,8 @@ pub struct UseEthereum {
 
 impl PartialEq for UseEthereum {
     fn eq(&self, other: &Self) -> bool {
-        self.connected == other.connected
+        self.ethereum == other.ethereum
+            && self.connected == other.connected
             && self.accounts == other.accounts
             && self.chain_id == other.chain_id
             && self.pairing_url == other.pairing_url

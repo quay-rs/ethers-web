@@ -646,7 +646,7 @@ impl Ethereum {
 impl JsonRpcClient for Ethereum {
     type Error = EthereumError;
 
-    async fn request<T: Serialize + Send + Sync, R: DeserializeOwned + Send>(
+    async fn request<T: Serialize + Send + Sync + std::fmt::Debug, R: DeserializeOwned + Send>(
         &self,
         method: &str,
         params: T,
