@@ -41,17 +41,17 @@ impl TryInto<WalletDescription> for &WalletData {
     type Error = ExplorerError;
 
     fn try_into(self) -> Result<WalletDescription, Self::Error> {
-        let chains = self
-            .chains
-            .iter()
-            .filter_map(|c| {
-                if c.starts_with("eip155:") {
-                    c[6..].parse::<u64>().ok()
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+        let chains =
+            self.chains
+                .iter()
+                .filter_map(|c| {
+                    if c.starts_with("eip155:") {
+                        c[6..].parse::<u64>().ok()
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
         let mobile_schema = match &self.mobile {
             None => None,
             Some(l) => match &l.native {
@@ -85,11 +85,7 @@ impl TryInto<WalletDescription> for &WalletData {
 
         Ok(WalletDescription {
             id: self.id.clone(),
-            short_name: self
-                .metadata
-                .short_name
-                .clone()
-                .unwrap_or(self.name.clone()),
+            short_name: self.metadata.short_name.clone().unwrap_or(self.name.clone()),
             name: self.name.clone(),
             chains,
             image_id: self.image_id.clone(),
