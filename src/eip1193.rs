@@ -242,8 +242,8 @@ fn parse_params<T: Serialize + Send + Sync>(
 ) -> Result<JsValue, Eip1193Error> {
     let t_params = JsValue::from_serde(&params)?;
     let typename_object = JsValue::from_str("type");
-
-    Ok(if !t_params.is_null() {
+    let mut error = None;
+    let optimistic_result = if !t_params.is_null() {
         // NOTE: Metamask experimental method with different options signature then rest of code
         // source: https://docs.metamask.io/wallet/reference/wallet_watchasset/
         if method != METAMASK_METHOD_WITH_WRONG_IMPLEMENTATION_SIGNATURE {
@@ -253,7 +253,7 @@ fn parse_params<T: Serialize + Send + Sync>(
                         if let Ok(obj_type) = js_sys::Reflect::get(trans, &typename_object) {
                             if let Some(type_string) = obj_type.as_string() {
                                 let t_copy = trans.clone();
-                                _ = match type_string.as_str() {
+                                let result = match type_string.as_str() {
                                     "0x01" => js_sys::Reflect::set(
                                         &t_copy,
                                         &typename_object,
@@ -271,7 +271,13 @@ fn parse_params<T: Serialize + Send + Sync>(
                                     ),
                                     _ => Ok(true),
                                 };
-                                return t_copy.into();
+
+                                return if let Err(e) = result {
+                                    error = Some(Eip1193Error::JsValueError(format!("{:?}", e)));
+                                    js_sys::Array::new().into()
+                                } else {
+                                    t_copy.into()
+                                }
                             }
                         }
                     }
@@ -286,5 +292,11 @@ fn parse_params<T: Serialize + Send + Sync>(
         }
     } else {
         js_sys::Array::new().into()
-    })
+    };
+
+    if let Some(e) = error {
+        Err(e)
+    } else {
+        Ok(optimistic_result)
+    }
 }
