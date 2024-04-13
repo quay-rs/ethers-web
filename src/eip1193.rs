@@ -242,12 +242,12 @@ fn parse_params<T: Serialize + Send + Sync>(
 ) -> Result<JsValue, Eip1193Error> {
     let t_params = JsValue::from_serde(&params)?;
     let typename_object = JsValue::from_str("type");
-    let mut error = None;
-    let optimistic_result = if !t_params.is_null() {
+    if !t_params.is_null() {
         // NOTE: Metamask experimental method with different options signature then rest of code
         // source: https://docs.metamask.io/wallet/reference/wallet_watchasset/
         if method != METAMASK_METHOD_WITH_WRONG_IMPLEMENTATION_SIGNATURE {
-            js_sys::Array::from(&t_params)
+            let mut error = None;
+            let default_result = js_sys::Array::from(&t_params)
                 .map(&mut |val, _, _| {
                     if let Some(trans) = js_sys::Object::try_from(&val) {
                         if let Ok(obj_type) = js_sys::Reflect::get(trans, &typename_object) {
@@ -277,26 +277,26 @@ fn parse_params<T: Serialize + Send + Sync>(
                                     js_sys::Array::new().into()
                                 } else {
                                     t_copy.into()
-                                }
+                                };
                             }
                         }
                     }
 
                     val
                 })
-                .into()
+                .into();
+
+            if let Some(e) = error {
+                Err(e)
+            } else {
+                Ok(default_result)
+            }
         } else {
             // NOTE: Yes, MM requires a different implementation for options for one method
             // source: https://docs.metamask.io/wallet/reference/wallet_watchasset/
-            t_params
+            Ok(t_params)
         }
     } else {
-        js_sys::Array::new().into()
-    };
-
-    if let Some(e) = error {
-        Err(e)
-    } else {
-        Ok(optimistic_result)
+        Ok(js_sys::Array::new().into())
     }
 }
