@@ -171,6 +171,7 @@ fn parse_params<T: Serialize + Send + Sync>(
     }
 }
 
+#[cfg(test)]
 #[cfg(target_arch = "wasm32")]
 mod tests {
     use std::str::FromStr;
