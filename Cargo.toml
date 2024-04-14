@@ -46,6 +46,7 @@ gloo-storage = "0.3.0"
 yew = { version = "0.21", features = ["csr"], optional = true }
 yew-hooks = {version = "0.3", optional = true }
 leptos = { version = "0.6", features = ["csr"], optional = true }
+wasm-bindgen-test = {version = "0.3"}
 
 [features]
 leptos = ["dep:leptos"]

@@ -43,6 +43,18 @@ pub enum Error {
 }
 
 impl RpcError for Error {
+    fn as_error_response(&self) -> Option<&JsonRpcError> {
+        match self {
+            Error::WalletConnectError(e) => e.as_error_response(),
+            Error::HttpClientError(e) => e.as_error_response(),
+            _ => None,
+        }
+    }
+
+    fn is_error_response(&self) -> bool {
+        self.as_error_response().is_some()
+    }
+
     fn as_serde_error(&self) -> Option<&serde_json::Error> {
         match self {
             Error::WalletConnectError(e) => e.as_serde_error(),
@@ -55,18 +67,6 @@ impl RpcError for Error {
     fn is_serde_error(&self) -> bool {
         self.as_serde_error().is_some()
     }
-
-    fn as_error_response(&self) -> Option<&JsonRpcError> {
-        match self {
-            Error::WalletConnectError(e) => e.as_error_response(),
-            Error::HttpClientError(e) => e.as_error_response(),
-            _ => None,
-        }
-    }
-
-    fn is_error_response(&self) -> bool {
-        self.as_error_response().is_some()
-    }
 }
 
 impl From<Error> for ProviderError {
@@ -76,7 +76,7 @@ impl From<Error> for ProviderError {
 }
 
 #[derive(Clone)]
-pub struct WalletConnectProvider {
+pub(crate) struct WalletConnectProvider {
     client: UnsafeSendSync<WalletConnect>,
     provider: Option<UnsafeSendSync<Http>>,
 }
@@ -152,24 +152,22 @@ impl WalletConnectProvider {
     }
 
     /// Get current valid address
-    pub fn address(&self) -> ethers::types::Address {
+    pub fn address(&self) -> Address {
         self.client.address()
     }
 
     /// Get all accounts connected to currently set chain_id
-    pub fn accounts(&self) -> Option<Vec<ethers::types::Address>> {
+    pub fn accounts(&self) -> Option<Vec<Address>> {
         self.accounts_for_chain(self.client.chain_id())
     }
 
     /// Get all accounts available for chain id
-    pub fn accounts_for_chain(&self, chain_id: u64) -> Option<Vec<ethers::types::Address>> {
+    pub fn accounts_for_chain(&self, chain_id: u64) -> Option<Vec<Address>> {
         self.client.get_accounts_for_chain_id(chain_id)
     }
 
     /// Get next message
-    pub async fn next(
-        &self,
-    ) -> Result<Option<walletconnect_client::event::Event>, walletconnect_client::Error> {
+    pub async fn next(&self) -> Result<Option<Event>, walletconnect_client::Error> {
         self.client.next().await
     }
 
