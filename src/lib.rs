@@ -161,7 +161,7 @@ pub enum EthereumError {
     Eip1193Error(#[from] Eip1193Error),
 
     #[error(transparent)]
-    WalletConnectError(#[from] walletconnect::Error),
+    WalletConnectError(#[from] crate::walletconnect::error::Error),
 
     #[error(transparent)]
     WalletConnectClientError(#[from] walletconnect_client::Error),

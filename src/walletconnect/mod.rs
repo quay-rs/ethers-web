@@ -1,79 +1,22 @@
+pub mod error;
+
+use self::error::Error;
 use async_trait::async_trait;
 use ethers::{
-    providers::{Http, HttpClientError, JsonRpcClient, JsonRpcError, ProviderError, RpcError},
-    types::{Address, Signature, SignatureError},
+    providers::{Http, JsonRpcClient},
+    types::{Address, Signature},
     utils::{hex::decode, serialize},
 };
 use futures::channel::oneshot;
-use hex::FromHexError;
-use log::error;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_value, json};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     str::FromStr,
 };
-use thiserror::Error;
 use unsafe_send_sync::UnsafeSendSync;
 use walletconnect_client::{prelude::*, WalletConnectState};
 use wasm_bindgen_futures::spawn_local;
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Missing RPC provider")]
-    MissingProvider,
-
-    #[error(transparent)]
-    SerdeJsonError(#[from] serde_json::Error),
-
-    #[error(transparent)]
-    WalletConnectError(#[from] WalletConnectError),
-
-    #[error(transparent)]
-    HttpClientError(#[from] HttpClientError),
-
-    #[error(transparent)]
-    SignatureError(#[from] SignatureError),
-
-    #[error(transparent)]
-    HexError(#[from] FromHexError),
-
-    #[error("Communication error")]
-    CommsError,
-}
-
-impl RpcError for Error {
-    fn as_error_response(&self) -> Option<&JsonRpcError> {
-        match self {
-            Error::WalletConnectError(e) => e.as_error_response(),
-            Error::HttpClientError(e) => e.as_error_response(),
-            _ => None,
-        }
-    }
-
-    fn is_error_response(&self) -> bool {
-        self.as_error_response().is_some()
-    }
-
-    fn as_serde_error(&self) -> Option<&serde_json::Error> {
-        match self {
-            Error::WalletConnectError(e) => e.as_serde_error(),
-            Error::HttpClientError(e) => e.as_serde_error(),
-            Error::SerdeJsonError(e) => Some(e),
-            _ => None,
-        }
-    }
-
-    fn is_serde_error(&self) -> bool {
-        self.as_serde_error().is_some()
-    }
-}
-
-impl From<Error> for ProviderError {
-    fn from(src: Error) -> Self {
-        ProviderError::JsonRpcClientError(Box::new(src))
-    }
-}
 
 #[derive(Clone)]
 pub(crate) struct WalletConnectProvider {
