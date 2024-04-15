@@ -270,8 +270,8 @@ impl From<walletconnect_client::event::Event> for Event {
             walletconnect_client::event::Event::Disconnected => Self::Disconnected,
             walletconnect_client::event::Event::Connected => Self::Connected,
             walletconnect_client::event::Event::AccountsChanged(acc) => Self::AccountsChanged(acc),
-            walletconnect_client::event::Event::ChainIdChanged(acc) => {
-                Self::ChainIdChanged(Some(acc))
+            walletconnect_client::event::Event::ChainIdChanged(id) => {
+                Self::ChainIdChanged(Some(id))
             }
             walletconnect_client::event::Event::Broken => Self::Broken,
         }
