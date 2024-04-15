@@ -1,6 +1,6 @@
 pub mod error;
-pub mod ethereum;
-pub mod request;
+mod ethereum;
+mod request;
 
 use crate::{
     eip1193::{error::Eip1193Error, ethereum::Ethereum, request::Eip1193Request},
