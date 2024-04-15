@@ -166,12 +166,8 @@ pub fn use_ethereum() -> UseEthereum {
                                 keep_looping = false;
                             }
                             Event::Broken => { /* we swallow this event and waiting for restart */ }
-                            Event::ChainIdChanged(chain_id) => {
-                                cid.set(chain_id);
-                            }
-                            Event::AccountsChanged(accounts) => {
-                                acc.set(accounts);
-                            }
+                            Event::ChainIdChanged(chain_id) => cid.set(chain_id),
+                            Event::AccountsChanged(accounts) => acc.set(accounts),
                         },
                         Ok(None) => {}
                         Err(err) => {
