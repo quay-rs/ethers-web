@@ -1,14 +1,17 @@
-pub mod eip1193;
 pub mod explorer;
-pub mod walletconnect;
+
+mod eip1193;
+mod event;
 
 #[cfg(feature = "leptos")]
 pub mod leptos;
+
+mod walletconnect;
 #[cfg(feature = "yew")]
 pub mod yew;
 
 use async_trait::async_trait;
-use eip1193::{Eip1193, Eip1193Error};
+use eip1193::{error::Eip1193Error, Eip1193};
 use ethers::{
     providers::{JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError, U256},
@@ -33,6 +36,7 @@ use wasm_bindgen_futures::spawn_local;
 
 const STATUS_KEY: &str = "ETHERS_WEB_STATE";
 
+use crate::event::WalletEvent;
 use walletconnect::WalletConnectProvider;
 
 /// Ethereum builder for Ethereum object
@@ -157,7 +161,7 @@ pub enum EthereumError {
     Eip1193Error(#[from] Eip1193Error),
 
     #[error(transparent)]
-    WalletConnectError(#[from] walletconnect::Error),
+    WalletConnectError(#[from] crate::walletconnect::error::Error),
 
     #[error(transparent)]
     WalletConnectClientError(#[from] walletconnect_client::Error),
@@ -173,6 +177,19 @@ impl From<EthereumError> for ProviderError {
 }
 
 impl RpcError for EthereumError {
+    fn as_error_response(&self) -> Option<&JsonRpcError> {
+        match self {
+            EthereumError::Eip1193Error(e) => e.as_error_response(),
+            EthereumError::WalletConnectError(e) => e.as_error_response(),
+            EthereumError::WalletConnectClientError(e) => e.as_error_response(),
+            _ => None,
+        }
+    }
+
+    fn is_error_response(&self) -> bool {
+        self.as_error_response().is_some()
+    }
+
     fn as_serde_error(&self) -> Option<&serde_json::Error> {
         match self {
             EthereumError::Eip1193Error(e) => e.as_serde_error(),
@@ -186,24 +203,11 @@ impl RpcError for EthereumError {
     fn is_serde_error(&self) -> bool {
         self.as_error_response().is_some()
     }
-
-    fn as_error_response(&self) -> Option<&JsonRpcError> {
-        match self {
-            EthereumError::Eip1193Error(e) => e.as_error_response(),
-            EthereumError::WalletConnectError(e) => e.as_error_response(),
-            EthereumError::WalletConnectClientError(e) => e.as_error_response(),
-            _ => None,
-        }
-    }
-
-    fn is_error_response(&self) -> bool {
-        self.as_error_response().is_some()
-    }
 }
 
 /// Currently connected provider
 #[derive(Clone)]
-pub enum WebProvider {
+pub(crate) enum WebProvider {
     None,
     Injected(Eip1193),
     WalletConnect(WalletConnectProvider),
@@ -226,14 +230,14 @@ impl PartialEq for WebProvider {
     }
 }
 
-/// Ethereums State to store or to be restored from
+/// Ethereum's state to store or to be restored from
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EthereumState {
     pub chain_id: Option<u64>,
     pub wc_state: Option<WalletConnectState>,
 }
 
-/// Ethereums connection event
+/// Ethereum's connection event
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     ConnectionWaiting(String),
@@ -300,7 +304,7 @@ impl Debug for Ethereum {
 }
 
 impl Ethereum {
-    /// Ethereums constructor
+    /// Ethereum constructor
     fn new(
         chain_id: u64,
         name: String,
@@ -324,7 +328,7 @@ impl Ethereum {
         }
     }
 
-    /// Checks if given wallet type is currently avvailable to connect
+    /// Checks if given wallet type is currently available to connect
     pub fn is_available(&self, wallet_type: WalletType) -> bool {
         match wallet_type {
             WalletType::Injected => self.injected_available(),
@@ -426,7 +430,7 @@ impl Ethereum {
         {
             let s = self.sender.clone();
             _ = injected.clone().on(
-                "disconnected",
+                WalletEvent::Disconnect,
                 Box::new(move |_| {
                     let sender = s.clone();
                     spawn_local(async move {
@@ -438,7 +442,7 @@ impl Ethereum {
         {
             let s = self.sender.clone();
             _ = injected.clone().on(
-                "chainChanged",
+                WalletEvent::ChainChanged,
                 Box::new(move |chain_id| {
                     let sender = s.clone();
                     spawn_local(async move {
@@ -454,7 +458,7 @@ impl Ethereum {
         {
             let s = self.sender.clone();
             _ = injected.clone().on(
-                "accountsChanged",
+                WalletEvent::AccountsChanged,
                 Box::new(move |accounts| {
                     let sender = s.clone();
                     spawn_local(async move {
