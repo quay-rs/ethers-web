@@ -2,10 +2,9 @@ pub mod error;
 mod ethereum;
 mod request;
 
-use crate::{
-    eip1193::{error::Eip1193Error, ethereum::Ethereum, request::Eip1193Request},
-    wallet_event::WalletEvent,
-};
+use self::{error::Eip1193Error, ethereum::Ethereum, request::Eip1193Request};
+
+use crate::event::WalletEvent;
 use async_trait::async_trait;
 use ethers::{
     providers::JsonRpcClient,
