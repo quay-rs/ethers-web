@@ -1,10 +1,10 @@
 pub mod error;
-mod ethereum;
-mod request;
+pub mod ethereum;
+pub mod request;
 
 use crate::{
     eip1193::{error::Eip1193Error, ethereum::Ethereum, request::Eip1193Request},
-    wallet_event::WalletEvent,
+    event::WalletEvent,
 };
 use async_trait::async_trait;
 use ethers::{
