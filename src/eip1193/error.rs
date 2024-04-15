@@ -42,7 +42,7 @@ pub enum Eip1193Error {
     HexError(#[from] FromHexError),
 
     #[error("Communication error")]
-    CommsError,
+    CommunicationError,
 }
 
 impl RpcError for Eip1193Error {

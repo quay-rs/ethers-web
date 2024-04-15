@@ -1,5 +1,9 @@
+pub mod error;
+mod ethereum;
+mod request;
+
 use crate::{
-    eip1193_error::Eip1193Error, eip1193_request::Eip1193Request, ethereum::Ethereum,
+    eip1193::{error::Eip1193Error, ethereum::Ethereum, request::Eip1193Request},
     wallet_event::WalletEvent,
 };
 use async_trait::async_trait;
@@ -56,7 +60,7 @@ impl JsonRpcClient for Eip1193 {
             }
         });
 
-        let res = receiver.await.map_err(|_| Eip1193Error::CommsError)?;
+        let res = receiver.await.map_err(|_| Eip1193Error::CommunicationError)?;
         Ok(serde_json::from_str(&res?)?)
     }
 }
@@ -174,11 +178,11 @@ fn parse_params<T: Serialize + Send + Sync>(
 #[cfg(test)]
 #[cfg(target_arch = "wasm32")]
 mod tests {
-    use std::str::FromStr;
-    use ethers::prelude::H160;
     use super::*;
-    use serde::{Serialize, Deserialize};
+    use ethers::prelude::H160;
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
+    use std::str::FromStr;
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::*;
 
@@ -191,10 +195,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn test_wrong_params_struct_should_return_qualified_empty_array() {
         // arrange
-        let params = UnsupportedParamsStruct {
-            field1: "test".to_string(),
-            field2: 123,
-        };
+        let params = UnsupportedParamsStruct { field1: "test".to_string(), field2: 123 };
 
         // optimistic act
         let result = test_parse_params_with(params, "wrong_method");
@@ -225,11 +226,19 @@ mod tests {
 
         let js_array = js_value.dyn_into::<js_sys::Array>().unwrap();
         assert_eq!(js_array.length(), 3);
-        assert_eq!(js_array.get(0).as_string().unwrap(), "0x0000000000000000000000000000000000000001");
-        assert_eq!(js_array.get(1).as_string().unwrap(), "0x0000000000000000000000000000000000000002");
-        assert_eq!(js_array.get(2).as_string().unwrap(), "0x0000000000000000000000000000000000000003");
+        assert_eq!(
+            js_array.get(0).as_string().unwrap(),
+            "0x0000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            js_array.get(1).as_string().unwrap(),
+            "0x0000000000000000000000000000000000000002"
+        );
+        assert_eq!(
+            js_array.get(2).as_string().unwrap(),
+            "0x0000000000000000000000000000000000000003"
+        );
     }
-
 
     #[wasm_bindgen_test]
     fn test_wrong_params_signature_for_mm_wallet_watch_asset_but_successful() {
@@ -257,11 +266,11 @@ mod tests {
             // arrange
             let internal_type = format!("0x0{}", i);
             let params = json!([{
-            "type": internal_type,
-            "another_value": "Tralalala",
-            "value_should_be_passed": "passed",
-            "and_another_value_should_be_passed": "to keep another length of object",
-        }]);
+                "type": internal_type,
+                "another_value": "Tralalala",
+                "value_should_be_passed": "passed",
+                "and_another_value_should_be_passed": "to keep another length of object",
+            }]);
             let internal_expected_type = format!("0x{}", i);
 
             let expected = format!("JsValue(Object({{\"and_another_value_should_be_passed\":\"to keep another length of object\",\"another_value\":\"Tralalala\",\"type\":\"{}\",\"value_should_be_passed\":\"passed\"}}))", internal_expected_type);

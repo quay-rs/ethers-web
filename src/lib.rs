@@ -1,10 +1,7 @@
-pub mod eip1193;
+mod eip1193;
 pub mod explorer;
 pub mod walletconnect;
 
-mod eip1193_error;
-mod eip1193_request;
-mod ethereum;
 #[cfg(feature = "leptos")]
 pub mod leptos;
 mod wallet_event;
@@ -12,8 +9,6 @@ mod wallet_event;
 pub mod yew;
 
 use async_trait::async_trait;
-use eip1193::Eip1193;
-use eip1193_error::Eip1193Error;
 use ethers::{
     providers::{JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError, U256},
@@ -38,7 +33,10 @@ use wasm_bindgen_futures::spawn_local;
 
 const STATUS_KEY: &str = "ETHERS_WEB_STATE";
 
-use crate::wallet_event::WalletEvent;
+use crate::{
+    eip1193::{error::Eip1193Error, Eip1193},
+    wallet_event::WalletEvent,
+};
 use walletconnect::WalletConnectProvider;
 
 /// Ethereum builder for Ethereum object

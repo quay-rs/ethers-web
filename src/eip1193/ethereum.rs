@@ -1,4 +1,4 @@
-use crate::{eip1193_error::Eip1193Error, eip1193_request::Eip1193Request};
+use crate::eip1193::{error::Eip1193Error, request::Eip1193Request};
 use wasm_bindgen::{closure::Closure, prelude::wasm_bindgen, JsValue};
 
 #[wasm_bindgen]
