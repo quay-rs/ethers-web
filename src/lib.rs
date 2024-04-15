@@ -1,10 +1,12 @@
-pub mod eip1193;
 pub mod explorer;
-pub mod walletconnect;
 
+mod eip1193;
 mod event;
+
 #[cfg(feature = "leptos")]
 pub mod leptos;
+
+mod walletconnect;
 #[cfg(feature = "yew")]
 pub mod yew;
 
