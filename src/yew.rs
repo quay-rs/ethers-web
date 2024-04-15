@@ -3,7 +3,7 @@ use ethers::{
     providers::Provider,
     types::{Address, Signature},
 };
-use log::{debug, error};
+use log::error;
 use serde::Serialize;
 use yew::{
     function_component, html, platform::spawn_local, prelude::*, Children, ContextProvider, Html,
@@ -167,11 +167,9 @@ pub fn use_ethereum() -> UseEthereum {
                             }
                             Event::Broken => { /* we swallow this event and waiting for restart */ }
                             Event::ChainIdChanged(chain_id) => {
-                                debug!("Chain id changed to {chain_id:?}");
                                 cid.set(chain_id);
                             }
                             Event::AccountsChanged(accounts) => {
-                                debug!("New accounts received {:?}", accounts);
                                 acc.set(accounts);
                             }
                         },
