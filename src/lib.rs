@@ -1,3 +1,7 @@
+//! A simple dApp client library for Eip1193 and WalletConnect wallet connections with ethers
+//! library.
+#![doc = include_str!("../README.md")]
+
 pub mod explorer;
 
 mod eip1193;
@@ -20,7 +24,7 @@ use ethers::{
 use gloo_storage::{LocalStorage, Storage};
 use gloo_utils::format::JsValueSerdeExt;
 use hex::FromHexError;
-use log::error;
+use log::{debug, error};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
@@ -265,6 +269,10 @@ impl From<walletconnect_client::event::Event> for Event {
         match value {
             walletconnect_client::event::Event::Disconnected => Self::Disconnected,
             walletconnect_client::event::Event::Connected => Self::Connected,
+            walletconnect_client::event::Event::AccountsChanged(acc) => Self::AccountsChanged(acc),
+            walletconnect_client::event::Event::ChainIdChanged(id) => {
+                Self::ChainIdChanged(Some(id))
+            }
             walletconnect_client::event::Event::Broken => Self::Broken,
         }
     }
@@ -508,6 +516,7 @@ impl Ethereum {
             _ => Ok(self.receiver.lock().await.recv().await),
         };
 
+        debug!("NEW EVENT {:?}", event);
         if let Ok(Some(e)) = &event {
             if e == &Event::Connected {
                 if let WebProvider::WalletConnect(provider) = &self.wallet {

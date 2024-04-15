@@ -3,7 +3,7 @@ use ethers::{
     providers::Provider,
     types::{Address, Signature},
 };
-use log::{debug, error};
+use log::error;
 use serde::Serialize;
 use yew::{
     function_component, html, platform::spawn_local, prelude::*, Children, ContextProvider, Html,
