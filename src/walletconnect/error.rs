@@ -5,6 +5,8 @@ use ethers::{
 use hex::FromHexError;
 use log::error;
 use thiserror::Error;
+use walletconnect_client::prelude::WalletConnectError;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Missing RPC provider")]
@@ -14,7 +16,7 @@ pub enum Error {
     SerdeJsonError(#[from] serde_json::Error),
 
     #[error(transparent)]
-    WalletConnectError(#[from] walletconnect_client::Error),
+    WalletConnectError(#[from] WalletConnectError),
 
     #[error(transparent)]
     HttpClientError(#[from] HttpClientError),

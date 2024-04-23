@@ -35,7 +35,9 @@ use tokio::sync::{
     mpsc::{channel, Receiver, Sender},
     Mutex,
 };
+use url::Url;
 use walletconnect_client::{prelude::Metadata, WalletConnect, WalletConnectState};
+use walletconnect_client::prelude::WalletConnectError;
 use wasm_bindgen_futures::spawn_local;
 
 const STATUS_KEY: &str = "ETHERS_WEB_STATE";
@@ -48,7 +50,7 @@ pub struct EthereumBuilder {
     pub chain_id: u64,
     pub name: String,
     pub description: String,
-    pub url: String,
+    pub url: Url,
     pub wc_project_id: Option<String>,
     pub icons: Vec<String>,
     pub rpc_node: Option<String>,
@@ -67,7 +69,7 @@ impl EthereumBuilder {
             chain_id: 1,
             name: "Example dApp".to_string(),
             description: "An example dApp written in Rust".to_string(),
-            url: "https://github.com/quay-rs/ethers-web".to_string(),
+            url: Url::parse("https://github.com/quay-rs/ethers-web").unwrap(),
             wc_project_id: None,
             icons: Vec::new(),
             rpc_node: None,
@@ -93,8 +95,8 @@ impl EthereumBuilder {
     }
 
     /// Setting dApp url
-    pub fn url(&mut self, url: &str) -> &Self {
-        self.url = url.to_string();
+    pub fn url(&mut self, url: Url) -> &Self {
+        self.url = url;
         self
     }
 
@@ -168,7 +170,7 @@ pub enum EthereumError {
     WalletConnectError(#[from] crate::walletconnect::error::Error),
 
     #[error(transparent)]
-    WalletConnectClientError(#[from] walletconnect_client::Error),
+    WalletConnectClientError(#[from] WalletConnectError),
 
     #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
@@ -264,16 +266,16 @@ impl Event {
     }
 }
 
-impl From<walletconnect_client::event::Event> for Event {
-    fn from(value: walletconnect_client::event::Event) -> Self {
+impl From<walletconnect_client::prelude::Event> for Event {
+    fn from(value: walletconnect_client::prelude::Event) -> Self {
         match value {
-            walletconnect_client::event::Event::Disconnected => Self::Disconnected,
-            walletconnect_client::event::Event::Connected => Self::Connected,
-            walletconnect_client::event::Event::AccountsChanged(acc) => Self::AccountsChanged(acc),
-            walletconnect_client::event::Event::ChainIdChanged(id) => {
+            walletconnect_client::prelude::Event::Disconnected => Self::Disconnected,
+            walletconnect_client::prelude::Event::Connected => Self::Connected,
+            walletconnect_client::prelude::Event::AccountsChanged(acc) => Self::AccountsChanged(acc),
+            walletconnect_client::prelude::Event::ChainIdChanged(id) => {
                 Self::ChainIdChanged(Some(id))
             }
-            walletconnect_client::event::Event::Broken => Self::Broken,
+            walletconnect_client::prelude::Event::Broken => Self::Broken,
         }
     }
 }
@@ -317,7 +319,7 @@ impl Ethereum {
         chain_id: u64,
         name: String,
         description: String,
-        url: String,
+        url: Url,
         wc_project_id: Option<String>,
         icons: Vec<String>,
         rpc_node: Option<String>,
@@ -325,7 +327,7 @@ impl Ethereum {
         let (sender, receiver) = channel::<Event>(10);
 
         Ethereum {
-            metadata: Metadata::from(&name, &description, &url, icons),
+            metadata: Metadata::from(&name, &description, url, icons),
             wc_project_id,
             rpc_node,
             accounts: None,
@@ -373,7 +375,7 @@ impl Ethereum {
         types
     }
 
-    /// Checkes if injected wallet is available in current context
+    /// Checks if injected wallet is available in current context
     pub fn injected_available(&self) -> bool {
         Eip1193::is_available()
     }

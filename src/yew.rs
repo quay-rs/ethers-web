@@ -5,6 +5,7 @@ use ethers::{
 };
 use log::error;
 use serde::Serialize;
+use url::Url;
 use yew::{
     function_component, html, platform::spawn_local, prelude::*, Children, ContextProvider, Html,
     Properties,
@@ -137,7 +138,7 @@ pub fn use_ethereum() -> UseEthereum {
     let chain_id = use_state(move || None as Option<u64>);
     let pairing_url = use_state(move || None as Option<String>);
 
-    let ethereum = use_state(move || builder.url("http://localhost").build());
+    let ethereum = use_state(move || builder.url(Url::parse("http://localhost").unwrap()).build());
 
     let con = connected.clone();
     let acc = accounts.clone();
