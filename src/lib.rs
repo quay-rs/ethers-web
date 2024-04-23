@@ -17,7 +17,7 @@ pub mod yew;
 use async_trait::async_trait;
 use eip1193::{error::Eip1193Error, Eip1193};
 use ethers::{
-    providers::{JsonRpcClient, JsonRpcError, ProviderError, RpcError},
+    providers::{Http, HttpClientError, JsonRpcClient, JsonRpcError, ProviderError, RpcError},
     types::{Address, Signature, SignatureError, U256},
     utils::ConversionError,
 };
@@ -28,6 +28,7 @@ use log::{debug, error};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
+    str::FromStr,
     sync::Arc,
 };
 use thiserror::Error;
@@ -160,6 +161,9 @@ pub enum EthereumError {
     ProviderError(#[from] ProviderError),
 
     #[error(transparent)]
+    HttpClientError(#[from] HttpClientError),
+
+    #[error(transparent)]
     SignatureError(#[from] SignatureError),
 
     #[error(transparent)]
@@ -290,6 +294,7 @@ pub struct Ethereum {
     pub metadata: Metadata,
     pub wc_project_id: Option<String>,
     pub rpc_node: Option<String>,
+    pub http_provider: Option<Http>,
 
     accounts: Option<Vec<Address>>,
     chain_id: Option<u64>,
@@ -330,10 +335,15 @@ impl Ethereum {
     ) -> Self {
         let (sender, receiver) = channel::<Event>(10);
 
+        let http_provider = match rpc_node {
+            Some(ref url) => Some(Http::from_str(&url).unwrap()),
+            None => None,
+        };
         Ethereum {
-            metadata: Metadata::from(&name, &description, url, icons),
+            metadata: Metadata::from(&name, &description, &url.to_string(), icons),
             wc_project_id,
             rpc_node,
+            http_provider,
             accounts: None,
             chain_id: Some(chain_id),
             sender,
@@ -668,7 +678,10 @@ impl JsonRpcClient for Ethereum {
         params: T,
     ) -> Result<R, Self::Error> {
         match &self.wallet {
-            WebProvider::None => Err(EthereumError::NotConnected),
+            WebProvider::None => match &self.http_provider {
+                Some(provider) => Ok(provider.request(method, params).await?),
+                None => Err(EthereumError::NotConnected),
+            },
             WebProvider::Injected(provider) => Ok(provider.request(method, params).await?),
             WebProvider::WalletConnect(provider) => Ok(provider.request(method, params).await?),
         }
