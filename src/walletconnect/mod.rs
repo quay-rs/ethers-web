@@ -110,7 +110,7 @@ impl WalletConnectProvider {
     }
 
     /// Get next message
-    pub async fn next(&self) -> Result<Option<Event>, walletconnect_client::Error> {
+    pub async fn next(&self) -> Result<Option<Event>, WalletConnectError> {
         self.client.next().await
     }
 
