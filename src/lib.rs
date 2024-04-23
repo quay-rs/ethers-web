@@ -36,8 +36,10 @@ use tokio::sync::{
     Mutex,
 };
 use url::Url;
-use walletconnect_client::{prelude::Metadata, WalletConnect, WalletConnectState};
-use walletconnect_client::prelude::WalletConnectError;
+use walletconnect_client::{
+    prelude::{Metadata, WalletConnectError},
+    WalletConnect, WalletConnectState,
+};
 use wasm_bindgen_futures::spawn_local;
 
 const STATUS_KEY: &str = "ETHERS_WEB_STATE";
@@ -271,7 +273,9 @@ impl From<walletconnect_client::prelude::Event> for Event {
         match value {
             walletconnect_client::prelude::Event::Disconnected => Self::Disconnected,
             walletconnect_client::prelude::Event::Connected => Self::Connected,
-            walletconnect_client::prelude::Event::AccountsChanged(acc) => Self::AccountsChanged(acc),
+            walletconnect_client::prelude::Event::AccountsChanged(acc) => {
+                Self::AccountsChanged(acc)
+            }
             walletconnect_client::prelude::Event::ChainIdChanged(id) => {
                 Self::ChainIdChanged(Some(id))
             }
