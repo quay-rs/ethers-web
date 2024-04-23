@@ -5,7 +5,7 @@ use ethers::{
 use hex::FromHexError;
 use log::error;
 use thiserror::Error;
-use walletconnect_client::prelude::WalletConnectError;
+use walletconnect_client::prelude::*;
 
 #[derive(Debug, Error)]
 pub enum Error {

@@ -3,7 +3,7 @@ use ethers::{
     providers::Provider,
     types::{Address, Signature},
 };
-use log::error;
+use log::{debug, error};
 use serde::Serialize;
 use url::Url;
 use yew::{
