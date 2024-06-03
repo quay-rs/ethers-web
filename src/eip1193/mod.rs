@@ -42,6 +42,9 @@ impl JsonRpcClient for Eip1193 {
         let parsed_params = parse_params(params, &m).unwrap_or_default();
         spawn_local(async move {
             if let Ok(ethereum) = Ethereum::default_opt() {
+                // We're using bare-metal JsObject creation.
+                // wasm_bindgen struggles to build error-free struct bridges
+                // so often rather than not the message receiver is unable to parse the call.
                 let payload = js_sys::Object::new();
                 _ = js_sys::Reflect::set(&payload, &"method".into(), &m.as_str().into());
                 if !parsed_params.is_null() {
