@@ -45,11 +45,14 @@ impl JsonRpcClient for Eip1193 {
                 // We're using bare-metal JsObject creation.
                 // wasm_bindgen struggles to build error-free struct bridges
                 // so often rather than not the message receiver is unable to parse the call.
-                let payload = js_sys::Object::new();
-                _ = js_sys::Reflect::set(&payload, &"method".into(), &m.as_str().into());
-                if !parsed_params.is_null() {
-                    _ = js_sys::Reflect::set(&payload, &"params".into(), &parsed_params);
-                }
+                let payload = {
+                    let obj = js_sys::Object::new();
+                    _ = js_sys::Reflect::set(&obj, &"method".into(), &m.as_str().into());
+                    if !parsed_params.is_null() {
+                        _ = js_sys::Reflect::set(&obj, &"params".into(), &parsed_params);
+                    }
+                    obj
+                };
                 let response = ethereum.request(payload.into()).await;
                 let res = match response {
                     Ok(r) => match js_sys::JSON::stringify(&r) {
