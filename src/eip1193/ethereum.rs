@@ -1,4 +1,4 @@
-use super::{error::Eip1193Error, request::Eip1193Request};
+use super::error::Eip1193Error;
 use wasm_bindgen::{closure::Closure, prelude::wasm_bindgen, JsValue};
 
 #[wasm_bindgen]
@@ -7,8 +7,8 @@ extern "C" {
     /// An EIP-1193 provider object. Available by convention at `window.ethereum`
     pub(crate) type Ethereum;
 
-    #[wasm_bindgen(catch, method)]
-    pub(crate) async fn request(_: &Ethereum, args: Eip1193Request) -> Result<JsValue, JsValue>;
+    #[wasm_bindgen(method, catch)]
+    pub(crate) async fn request(_: &Ethereum, args: JsValue) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(method)]
     pub(crate) fn on(_: &Ethereum, eventName: &str, listener: &Closure<dyn FnMut(JsValue)>);
