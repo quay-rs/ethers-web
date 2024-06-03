@@ -1,8 +1,7 @@
 pub mod error;
 mod ethereum;
-mod request;
 
-use self::{error::Eip1193Error, ethereum::Ethereum, request::Eip1193Request};
+use self::{error::Eip1193Error, ethereum::Ethereum};
 
 use crate::event::WalletEvent;
 use async_trait::async_trait;
@@ -43,9 +42,12 @@ impl JsonRpcClient for Eip1193 {
         let parsed_params = parse_params(params, &m).unwrap_or_default();
         spawn_local(async move {
             if let Ok(ethereum) = Ethereum::default_opt() {
-                let payload = Eip1193Request::new(m, parsed_params);
-
-                let response = ethereum.request(payload).await;
+                let payload = js_sys::Object::new();
+                _ = js_sys::Reflect::set(&payload, &"method".into(), &m.as_str().into());
+                if !parsed_params.is_null() {
+                    _ = js_sys::Reflect::set(&payload, &"params".into(), &parsed_params);
+                }
+                let response = ethereum.request(payload.into()).await;
                 let res = match response {
                     Ok(r) => match js_sys::JSON::stringify(&r) {
                         Ok(r) => Ok(r.as_string().unwrap()),
@@ -170,7 +172,7 @@ fn parse_params<T: Serialize + Send + Sync>(
             Ok(t_params)
         }
     } else {
-        Ok(js_sys::Array::new().into())
+        Ok(wasm_bindgen::JsValue::null())
     }
 }
 
