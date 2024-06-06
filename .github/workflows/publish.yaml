@@ -45,6 +45,6 @@ jobs:
           git push origin --tags
 
       - name: Login to crates.io
-        run: echo "test" | cargo login
+        run: echo "${{ secrets.CARGO_TOKEN }}" | cargo login
       - name: Publish
         run: cargo publish --verbose
