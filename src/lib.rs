@@ -47,6 +47,7 @@ const STATUS_KEY: &str = "ETHERS_WEB_STATE";
 
 use crate::event::WalletEvent;
 use walletconnect::WalletConnectProvider;
+use walletconnect_client::prelude::Event as WalletConnectEvent;
 
 /// Ethereum builder for Ethereum object
 pub struct EthereumBuilder {
@@ -272,18 +273,14 @@ impl Event {
     }
 }
 
-impl From<walletconnect_client::prelude::Event> for Event {
-    fn from(value: walletconnect_client::prelude::Event) -> Self {
+impl From<WalletConnectEvent> for Event {
+    fn from(value: WalletConnectEvent) -> Self {
         match value {
-            walletconnect_client::prelude::Event::Disconnected => Self::Disconnected,
-            walletconnect_client::prelude::Event::Connected => Self::Connected,
-            walletconnect_client::prelude::Event::AccountsChanged(acc) => {
-                Self::AccountsChanged(acc)
-            }
-            walletconnect_client::prelude::Event::ChainIdChanged(id) => {
-                Self::ChainIdChanged(Some(id))
-            }
-            walletconnect_client::prelude::Event::Broken => Self::Broken,
+            WalletConnectEvent::Disconnected => Self::Disconnected,
+            WalletConnectEvent::Connected => Self::Connected,
+            WalletConnectEvent::AccountsChanged(acc) => Self::AccountsChanged(acc),
+            WalletConnectEvent::ChainIdChanged(id) => Self::ChainIdChanged(Some(id)),
+            WalletConnectEvent::Broken => Self::Broken,
         }
     }
 }
