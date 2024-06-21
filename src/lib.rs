@@ -337,7 +337,7 @@ impl Ethereum {
             None => None,
         };
         Ethereum {
-            metadata: Metadata::from(&name, &description, &url.to_string(), icons),
+            metadata: Metadata::from(&name, &description, url, icons),
             wc_project_id,
             rpc_node,
             http_provider,
