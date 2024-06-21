@@ -4,7 +4,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-ethers-web = "0.1"
+ethers-web = "0.2"
 ```
 
 Depending on the web framework you are using you might want to enable proper feature.
@@ -14,7 +14,7 @@ For `yew` you should simply enable its feature first:
 
 ```toml
 [dependencies]
-ethers-web = { version = "0.1", features = [ "yew" ] }
+ethers-web = { version = "0.2", features = [ "yew" ] }
 ```
 
 In `examples` folder you will find an example yew application that is using an `yew::UseEthereum` that will allow you to connect to chosen wallet and maintain its life cycle
