@@ -1,4 +1,3 @@
-use crate::{Ethereum, EthereumBuilder, EthereumError, Event, WalletType};
 use ethers::{
     providers::Provider,
     types::{Address, Signature},
@@ -10,6 +9,8 @@ use yew::{
     function_component, html, platform::spawn_local, prelude::*, Children, ContextProvider, Html,
     Properties,
 };
+
+use crate::{Ethereum, EthereumBuilder, EthereumError, Event, WalletType};
 
 #[derive(Clone, PartialEq)]
 pub struct EthereumProviderState {
@@ -32,6 +33,7 @@ pub fn ethereum_context_provider(props: &Props) -> Html {
         </ContextProvider<UseEthereum>>
     }
 }
+
 #[derive(Clone, Debug)]
 pub struct UseEthereum {
     pub ethereum: UseStateHandle<Ethereum>,
@@ -138,7 +140,22 @@ pub fn use_ethereum() -> UseEthereum {
     let chain_id = use_state(move || None as Option<u64>);
     let pairing_url = use_state(move || None as Option<String>);
 
-    let ethereum = use_state(move || builder.url(Url::parse("http://localhost").unwrap()).build());
+    let app_url =
+        if let Some(app_url) = std::option_env!("APP_URL") { app_url } else { "http://localhost" };
+
+    let ethereum = use_state(move || {
+        builder
+            .url(
+                Url::parse(app_url).expect(
+                    format!(
+                        "Correct app url in variable APP_URL is not provided. '{:?}'",
+                        std::option_env!("APP_URL")
+                    )
+                    .as_ref(),
+                ),
+            )
+            .build()
+    });
 
     let con = connected.clone();
     let acc = accounts.clone();
