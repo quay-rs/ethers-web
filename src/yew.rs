@@ -147,11 +147,10 @@ pub fn use_ethereum() -> UseEthereum {
         builder
             .url(
                 Url::parse(app_url).expect(
-                    format!(
+                    &format!(
                         "Correct app url in variable APP_URL is not provided. '{:?}'",
                         std::option_env!("APP_URL")
-                    )
-                    .as_ref(),
+                    ),
                 ),
             )
             .build()
