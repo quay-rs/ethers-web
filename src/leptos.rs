@@ -8,6 +8,7 @@ use ethers::{
 use leptos::*;
 use log::{debug, error};
 use serde::Serialize;
+use url::Url;
 
 /// Structure informing about current ethereum connection state
 #[derive(Debug, Clone)]
@@ -112,7 +113,22 @@ impl EthereumInnerContext {
             builder.rpc_node(rpc_url);
         }
 
-        let ethereum = builder.url("http://localhost").build();
+        let app_url = if let Some(app_url) = std::option_env!("APP_URL") {
+            app_url
+        } else {
+            "http://localhost"
+        };
+
+        let ethereum = builder
+            .url(
+                Url::parse(app_url).expect(
+                    &format!(
+                        "Correct app url in variable APP_URL is not provided. '{:?}'",
+                        std::option_env!("APP_URL")
+                    ),
+                ),
+            )
+            .build();
 
         let (ethers, set_ethers) = create_signal(ethereum);
         Self { ethers, set_ethers, state, set_state }
